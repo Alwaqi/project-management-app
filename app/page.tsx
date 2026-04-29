@@ -166,6 +166,10 @@ export default function Home() {
 
     if (!session.data?.user) {
       setActiveUser(null);
+      setUsers([]);
+      setProjects([]);
+      setTasks([]);
+      setDashboardSummary(null);
       return;
     }
 
@@ -190,23 +194,16 @@ export default function Home() {
   };
 
   const handleRegister = async (name: string, email: string, password: string, role: Role) => {
-    const response = await fetch("/api/auth/sign-up/email", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        name,
-        email,
-        password,
-        callbackURL: "/",
-        role,
-      }),
+    const { error } = await authClient.signUp.email({
+      name,
+      email,
+      password,
+      callbackURL: "/",
+      role,
     });
-    const payload = (await response.json()) as { message?: string; error?: string };
 
-    if (!response.ok) {
-      throw new Error(getAuthErrorMessage(payload.message ?? payload.error));
+    if (error) {
+      throw new Error(getAuthErrorMessage(error.message));
     }
 
     await session.refetch();
@@ -216,8 +213,15 @@ export default function Home() {
   };
 
   const handleLogout = async () => {
-    await authClient.signOut();
-    await session.refetch();
+    const { error } = await authClient.signOut();
+
+    if (error) {
+      showToast(getAuthErrorMessage(error.message));
+      return;
+    }
+
+    authClient.$store.notify("$sessionSignal");
+    await session.refetch({ query: { disableCookieCache: true } });
     setActiveUser(null);
     setUsers([]);
     setProjects([]);
@@ -426,6 +430,8 @@ function LoginScreen({
                 <Label htmlFor="name">Nama lengkap</Label>
                 <Input
                   id="name"
+                  name="name"
+                  autoComplete="name"
                   value={name}
                   onChange={(event) => setName(event.target.value)}
                   required
@@ -436,7 +442,11 @@ function LoginScreen({
               <Label htmlFor="email">Email aktif</Label>
               <Input
                 id="email"
+                name="email"
                 type="email"
+                autoComplete="email"
+                autoCapitalize="none"
+                spellCheck={false}
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 required
@@ -446,7 +456,9 @@ function LoginScreen({
               <Label htmlFor="password">Password</Label>
               <Input
                 id="password"
+                name="password"
                 type="password"
+                autoComplete={mode === "register" ? "new-password" : "current-password"}
                 minLength={8}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
