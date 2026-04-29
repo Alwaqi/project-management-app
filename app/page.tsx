@@ -180,7 +180,6 @@ export default function Home() {
     const { error } = await authClient.signIn.email({
       email,
       password,
-      callbackURL: "/",
     });
 
     if (error) {
@@ -194,19 +193,28 @@ export default function Home() {
   };
 
   const handleRegister = async (name: string, email: string, password: string, role: Role) => {
-    const { error } = await authClient.signUp.email({
+    const { error: signUpError } = await authClient.signUp.email({
       name,
       email,
       password,
-      callbackURL: "/",
       role,
     });
 
-    if (error) {
-      throw new Error(getAuthErrorMessage(error.message));
+    if (signUpError) {
+      throw new Error(getAuthErrorMessage(signUpError.message));
     }
 
-    await session.refetch();
+    const { error: signInError } = await authClient.signIn.email({
+      email,
+      password,
+    });
+
+    if (signInError) {
+      throw new Error(getAuthErrorMessage(signInError.message));
+    }
+
+    authClient.$store.notify("$sessionSignal");
+    await session.refetch({ query: { disableCookieCache: true } });
     const registeredUser = await loadWorkspace(email);
     setActiveView((registeredUser?.role ?? role) === "Leader" ? "dashboard" : "journal");
     showToast("Akun berhasil dibuat.");
