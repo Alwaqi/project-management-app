@@ -186,7 +186,8 @@ export default function Home() {
       throw new Error(getAuthErrorMessage(error.message));
     }
 
-    await session.refetch();
+    authClient.$store.notify("$sessionSignal");
+    await session.refetch({ query: { disableCookieCache: true } });
     const loggedInUser = await loadWorkspace(email);
     setActiveView((loggedInUser?.role ?? "Tim") === "Leader" ? "dashboard" : "journal");
     showToast("Berhasil masuk ke ruang kerja.");
