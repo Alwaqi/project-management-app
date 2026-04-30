@@ -2,16 +2,21 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   BarChart3,
+  CalendarClock,
   CheckCircle2,
+  ChevronDown,
   ClipboardList,
   FolderKanban,
   MailCheck,
   LayoutDashboard,
+  ListChecks,
   LogOut,
   PenLine,
   Plus,
   Save,
+  Trash2,
   Users,
 } from "lucide-react";
 
@@ -51,11 +56,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Textarea } from "@/components/ui/textarea";
 import { authClient } from "@/lib/auth-client";
 import {
   formatDate,
+  getDaysUntilDeadline,
   getProjectProgress,
+  getProjectTargetCount,
+  getTaskPlannedDuration,
+  isProjectOverdue,
   Project,
   ProjectStatus,
   Role,
@@ -72,12 +80,21 @@ type ProjectWithProgress = Project & {
   total_tugas: number;
 };
 
+type TargetDraft = {
+  id: string;
+  deskripsi: string;
+  mulai: string;
+  deadline: string;
+};
+
 type DashboardSummary = {
   metrics: {
     proyek_berjalan: number;
     tugas_hari_ini: number;
     rata_rata_progress: number;
     proyek_selesai: number;
+    proyek_overdue: number;
+    deadline_minggu_ini: number;
   };
   projects: ProjectWithProgress[];
   memberPerformance: Array<{
@@ -90,6 +107,11 @@ type DashboardSummary = {
     total: number;
     rasio_selesai: number;
   }>;
+  deadlineTracking: {
+    overdueProjects: ProjectWithProgress[];
+    dueSoonProjects: ProjectWithProgress[];
+    withoutDeadline: number;
+  };
   recentTasks: Task[];
 };
 
@@ -541,7 +563,31 @@ function DashboardView({
 }) {
   const activeProjects = projects.filter((project) => project.status === "Berjalan");
   const completedProjects = projects.filter((project) => project.status === "Selesai");
-  const todayTasks = tasks.filter((task) => task.tanggal === getLocalDateKey());
+  const today = getLocalDateKey();
+  const todayTasks = tasks.filter((task) => task.tanggal === today);
+  const overdueProjects =
+    summary?.deadlineTracking.overdueProjects ??
+    projects.filter((project) => isProjectOverdue(project, today));
+  const dueSoonProjects =
+    summary?.deadlineTracking.dueSoonProjects ??
+    projects.filter((project) => {
+      if (!project.deadline || project.status === "Selesai" || isProjectOverdue(project, today)) {
+        return false;
+      }
+
+      const daysLeft = getDaysUntilDeadline(project.deadline, today);
+      return daysLeft >= 0 && daysLeft <= 7;
+    });
+  const withoutDeadline =
+    summary?.deadlineTracking.withoutDeadline ??
+    projects.filter((project) => !project.deadline && project.status !== "Selesai").length;
+  const onTrackProjects = projects.filter((project) => {
+    if (!project.deadline || project.status === "Selesai") {
+      return false;
+    }
+
+    return !isProjectOverdue(project, today) && getDaysUntilDeadline(project.deadline, today) > 7;
+  });
   const memberPerformance = useMemo(
     () =>
       summary?.memberPerformance.map((member) => ({
@@ -571,11 +617,26 @@ function DashboardView({
         }
       />
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         <MetricCard label="Proyek Berjalan" value={metrics?.proyek_berjalan ?? activeProjects.length} icon={FolderKanban} />
         <MetricCard label="Tugas Hari Ini" value={metrics?.tugas_hari_ini ?? todayTasks.length} icon={ClipboardList} />
         <MetricCard label="Rata-rata Progress" value={`${metrics?.rata_rata_progress ?? averageProgress}%`} icon={BarChart3} />
         <MetricCard label="Proyek Selesai" value={metrics?.proyek_selesai ?? completedProjects.length} icon={CheckCircle2} />
+        <MetricCard label="Proyek Overdue" value={metrics?.proyek_overdue ?? overdueProjects.length} icon={AlertTriangle} />
+        <MetricCard label="Deadline 7 Hari" value={metrics?.deadline_minggu_ini ?? dueSoonProjects.length} icon={CalendarClock} />
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[1fr_1.15fr]">
+        <DeadlineRiskChart
+          overdueCount={overdueProjects.length}
+          dueSoonCount={dueSoonProjects.length}
+          onTrackCount={onTrackProjects.length}
+          withoutDeadlineCount={withoutDeadline}
+        />
+        <DeadlineWatchlist
+          projects={[...overdueProjects, ...dueSoonProjects, ...onTrackProjects].slice(0, 6)}
+          today={today}
+        />
       </div>
 
       <Card>
@@ -653,10 +714,29 @@ function DashboardView({
                       <p className="font-medium">{project.nama_proyek}</p>
                       <p className="text-sm text-muted-foreground">
                         {project.total_tugas ?? tasks.filter((task) => task.project_id === project.id).length} dari{" "}
-                        {project.target_tugas} tugas target
+                        {getProjectTargetCount(project)} tugas target
                       </p>
+                      {project.target_detail_tugas.length > 0 && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {project.target_detail_tugas
+                            .slice(0, 2)
+                            .map((item) => item.deskripsi)
+                            .join(", ")}
+                          {project.target_detail_tugas.length > 2 ? "..." : ""}
+                        </p>
+                      )}
+                      {project.deadline && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Deadline {formatDate(project.deadline)}
+                        </p>
+                      )}
                     </div>
-                    <Badge variant={statusVariant[project.status]}>{project.status}</Badge>
+                    <div className="flex flex-wrap gap-2">
+                      {project.deadline && project.status !== "Selesai" && (
+                        <DeadlineBadge project={project} today={today} />
+                      )}
+                      <Badge variant={statusVariant[project.status]}>{project.status}</Badge>
+                    </div>
                   </div>
                   <div className="mt-4 flex items-center gap-3">
                     <Progress value={progress} />
@@ -699,6 +779,22 @@ function ProjectView({
   onUpdateProject: (project: Project) => void;
   onCloseProject: (projectId: string) => void;
 }) {
+  const [expandedProjectIds, setExpandedProjectIds] = useState<Set<string>>(new Set());
+
+  const toggleProjectDetails = (projectId: string) => {
+    setExpandedProjectIds((currentIds) => {
+      const nextIds = new Set(currentIds);
+
+      if (nextIds.has(projectId)) {
+        nextIds.delete(projectId);
+      } else {
+        nextIds.add(projectId);
+      }
+
+      return nextIds;
+    });
+  };
+
   return (
     <div className="grid gap-6">
       <PageHeader
@@ -717,8 +813,10 @@ function ProjectView({
             <TableHeader>
               <TableRow>
                 <TableHead>Nama Proyek</TableHead>
+                <TableHead>Target</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Progress</TableHead>
+                <TableHead>Deadline</TableHead>
                 <TableHead>Dibuat</TableHead>
                 <TableHead className="text-right">Aksi</TableHead>
               </TableRow>
@@ -726,9 +824,55 @@ function ProjectView({
             <TableBody>
               {projects.map((project) => {
                 const progress = project.progress ?? getProjectProgress(project, tasks);
+                const isExpanded = expandedProjectIds.has(project.id);
+
                 return (
                   <TableRow key={project.id}>
-                    <TableCell className="min-w-56 font-medium">{project.nama_proyek}</TableCell>
+                    <TableCell className="min-w-72">
+                      <div className="grid gap-2">
+                        <p className="font-medium">{project.nama_proyek}</p>
+                        {project.target_detail_tugas.length > 0 ? (
+                          <>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="w-fit gap-2 px-2"
+                              onClick={() => toggleProjectDetails(project.id)}
+                            >
+                              <ChevronDown
+                                className={cn(
+                                  "h-4 w-4 transition-transform",
+                                  isExpanded && "rotate-180",
+                                )}
+                                aria-hidden="true"
+                              />
+                              {isExpanded ? "Sembunyikan detail" : "Lihat detail"}
+                            </Button>
+                            {isExpanded && (
+                              <ul className="grid gap-1 rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
+                                {project.target_detail_tugas.map((item) => (
+                                  <li key={item.id} className="flex gap-2">
+                                    <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                                    <span>{item.deskripsi}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            Detail target belum diisi
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="min-w-32">
+                      <div className="flex items-center gap-2 text-sm font-medium">
+                        <ListChecks className="h-4 w-4 text-primary" aria-hidden="true" />
+                        {getProjectTargetCount(project)}
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <Badge variant={statusVariant[project.status]}>{project.status}</Badge>
                     </TableCell>
@@ -737,6 +881,18 @@ function ProjectView({
                         <Progress value={progress} />
                         <span className="w-10 text-right text-xs font-semibold">{progress}%</span>
                       </div>
+                    </TableCell>
+                    <TableCell className="min-w-40">
+                      {project.deadline ? (
+                        <div className="grid gap-1">
+                          <span className="text-sm">{formatDate(project.deadline)}</span>
+                          {project.status !== "Selesai" && (
+                            <DeadlineBadge project={project} today={getLocalDateKey()} />
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">Belum diatur</span>
+                      )}
                     </TableCell>
                     <TableCell>{formatDate(project.dibuat_pada)}</TableCell>
                     <TableCell>
@@ -780,7 +936,18 @@ function ProjectDialog({
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(project?.nama_proyek ?? "");
   const [status, setStatus] = useState<ProjectStatus>(project?.status ?? "Berjalan");
-  const [target, setTarget] = useState(project?.target_tugas.toString() ?? "8");
+  const [targetRows, setTargetRows] = useState<TargetDraft[]>(() =>
+    getInitialTargetRows(project),
+  );
+  const targetItems = useMemo(() => normalizeTargetRows(targetRows), [targetRows]);
+  const targetCount = targetItems.length || project?.target_tugas || 0;
+  const computedProjectDeadline = getProjectDeadlineFromTargets(targetItems) ?? project?.deadline ?? null;
+
+  const updateTargetRow = (id: string, values: Partial<TargetDraft>) => {
+    setTargetRows((currentRows) =>
+      currentRows.map((row) => (row.id === id ? { ...row, ...values } : row)),
+    );
+  };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -788,14 +955,22 @@ function ProjectDialog({
       id: project?.id ?? `p-${Date.now()}`,
       nama_proyek: name,
       status,
-      target_tugas: Math.max(1, Number(target) || 1),
+      target_tugas: Math.max(1, targetCount || 1),
+      target_detail_tugas: targetItems.map((item, index) => ({
+        id: project?.target_detail_tugas[index]?.id ?? `target-${Date.now()}-${index}`,
+        deskripsi: item.deskripsi,
+        mulai: item.mulai,
+        deadline: item.deadline,
+        urutan: index + 1,
+      })),
+      deadline: computedProjectDeadline,
       dibuat_pada: project?.dibuat_pada ?? new Date().toISOString().slice(0, 10),
     });
     setOpen(false);
     if (!project) {
       setName("");
       setStatus("Berjalan");
-      setTarget("8");
+      setTargetRows([createEmptyTargetDraft()]);
     }
   };
 
@@ -807,11 +982,11 @@ function ProjectDialog({
           {project ? "Edit" : "Buat Proyek Baru"}
         </Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>{project ? "Edit Proyek" : "Buat Proyek Baru"}</DialogTitle>
           <DialogDescription>
-            Isi nama, status, dan target tugas agar progress bisa dipantau.
+            Isi nama, status, target tugas, dan deadline agar progress serta risiko terlambat bisa dipantau.
           </DialogDescription>
         </DialogHeader>
         <form className="grid gap-4" onSubmit={handleSubmit}>
@@ -839,15 +1014,87 @@ function ProjectDialog({
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="target">Target tugas</Label>
-              <Input
-                id="target"
-                type="number"
-                min={1}
-                value={target}
-                onChange={(event) => setTarget(event.target.value)}
-                required
-              />
+              <Label>Jumlah target</Label>
+              <div className="flex h-10 items-center rounded-md border bg-muted/45 px-3 text-sm font-semibold">
+                {targetCount || 0} tugas
+              </div>
+            </div>
+          </div>
+          <div className="grid gap-3">
+            <div className="flex items-center justify-between gap-3">
+              <Label>Detail target tugas</Label>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={() => setTargetRows((currentRows) => [...currentRows, createEmptyTargetDraft()])}
+              >
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                Tambah Baris
+              </Button>
+            </div>
+            <div className="grid gap-3">
+              {targetRows.map((row, index) => (
+                <div
+                  key={row.id}
+                  className="grid gap-3 rounded-md border bg-muted/25 p-3 lg:grid-cols-[1.4fr_0.85fr_0.85fr_auto]"
+                >
+                  <div className="grid gap-2">
+                    <Label htmlFor={`target-${row.id}`}>Detail {index + 1}</Label>
+                    <Input
+                      id={`target-${row.id}`}
+                      value={row.deskripsi}
+                      onChange={(event) => updateTargetRow(row.id, { deskripsi: event.target.value })}
+                      placeholder="Contoh: Buat wireframe dashboard"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor={`target-start-${row.id}`}>Mulai</Label>
+                    <Input
+                      id={`target-start-${row.id}`}
+                      type="date"
+                      value={row.mulai}
+                      onChange={(event) => updateTargetRow(row.id, { mulai: event.target.value })}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor={`target-deadline-${row.id}`}>Deadline</Label>
+                    <Input
+                      id={`target-deadline-${row.id}`}
+                      type="date"
+                      value={row.deadline}
+                      onChange={(event) => updateTargetRow(row.id, { deadline: event.target.value })}
+                    />
+                  </div>
+                  <div className="flex items-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full gap-2"
+                      disabled={targetRows.length === 1}
+                      onClick={() =>
+                        setTargetRows((currentRows) =>
+                          currentRows.filter((currentRow) => currentRow.id !== row.id),
+                        )
+                      }
+                    >
+                      <Trash2 className="h-4 w-4" aria-hidden="true" />
+                      Hapus
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Jumlah target dihitung dari baris detail yang terisi. Deadline proyek otomatis memakai deadline detail paling akhir.
+            </p>
+          </div>
+          <div className="grid gap-2">
+            <Label>Deadline proyek otomatis</Label>
+            <div className="flex h-10 items-center rounded-md border bg-muted/45 px-3 text-sm font-semibold">
+              {computedProjectDeadline ? formatDate(computedProjectDeadline) : "Belum ada deadline detail"}
             </div>
           </div>
           <DialogFooter>
@@ -877,35 +1124,49 @@ function JournalView({
 }) {
   const selectableProjects = projects.filter((project) => project.status !== "Selesai");
   const [selectedProject, setSelectedProject] = useState(selectableProjects[0]?.id ?? "");
-  const [description, setDescription] = useState("");
+  const selectedProjectData = selectableProjects.find((project) => project.id === selectedProject);
+  const completedTargetIds = new Set(
+    tasks
+      .filter((task) => task.project_id === selectedProject && task.target_task_id)
+      .map((task) => task.target_task_id),
+  );
+  const completedTargets = selectedProjectData
+    ? selectedProjectData.target_detail_tugas.filter((target) => completedTargetIds.has(target.id))
+        .length
+    : 0;
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const handleTargetCheck = (target: Project["target_detail_tugas"][number]) => {
+    if (!selectedProjectData || completedTargetIds.has(target.id)) {
+      return;
+    }
+
     onCreateTask({
       id: `t-${Date.now()}`,
-      project_id: selectedProject,
+      project_id: selectedProjectData.id,
+      target_task_id: target.id,
       user_id: activeUser.id,
-      deskripsi: description,
+      deskripsi: target.deskripsi,
       tanggal: getLocalDateKey(),
     });
-    setDescription("");
   };
 
   return (
     <div className="grid gap-6">
       <PageHeader
         title="Jurnal Tugas Harian"
-        description="Catat pekerjaan yang selesai hari ini dan hubungkan ke proyek terkait."
+        description="Centang detail target yang sudah selesai dikerjakan hari ini."
       />
 
       <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
         <Card>
           <CardHeader>
-            <CardTitle>Input Tugas</CardTitle>
-            <CardDescription>Satu catatan singkat sudah cukup untuk memperbarui progress.</CardDescription>
+            <CardTitle>Checklist Detail Tugas</CardTitle>
+            <CardDescription>
+              Pilih proyek, lalu centang target yang sudah selesai. Catatan harian akan tersimpan otomatis.
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <form className="grid gap-4" onSubmit={handleSubmit}>
+            <div className="grid gap-4">
               <div className="grid gap-2">
                 <Label>Proyek</Label>
                 <Select value={selectedProject} onValueChange={setSelectedProject}>
@@ -921,21 +1182,62 @@ function JournalView({
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="task-description">Apa yang sudah diselesaikan?</Label>
-                <Textarea
-                  id="task-description"
-                  value={description}
-                  onChange={(event) => setDescription(event.target.value)}
-                  placeholder="Contoh: Menyelesaikan validasi form login dan memperbaiki pesan error."
-                  required
-                />
-              </div>
-              <Button type="submit" className="gap-2" disabled={!selectedProject}>
-                <Save className="h-4 w-4" aria-hidden="true" />
-                Simpan Tugas
-              </Button>
-            </form>
+
+              {selectedProjectData ? (
+                <div className="grid gap-3">
+                  <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/45 px-3 py-2 text-sm">
+                    <span className="font-medium">
+                      {completedTargets} / {getProjectTargetCount(selectedProjectData)} selesai
+                    </span>
+                    <span className="text-muted-foreground">
+                      {Math.round((completedTargets / getProjectTargetCount(selectedProjectData)) * 100)}%
+                    </span>
+                  </div>
+                  {selectedProjectData.target_detail_tugas.length > 0 ? (
+                    <div className="grid gap-2">
+                      {selectedProjectData.target_detail_tugas.map((target) => {
+                        const isCompleted = completedTargetIds.has(target.id);
+
+                        return (
+                          <label
+                            key={target.id}
+                            className={cn(
+                              "flex cursor-pointer items-start gap-3 rounded-md border p-3 text-sm transition-colors",
+                              isCompleted ? "bg-emerald-50 text-emerald-800" : "bg-card hover:bg-muted/45",
+                            )}
+                          >
+                            <input
+                              type="checkbox"
+                              className="mt-0.5 h-4 w-4 rounded border-input accent-primary"
+                              checked={isCompleted}
+                              disabled={isCompleted}
+                              onChange={() => handleTargetCheck(target)}
+                            />
+                            <span className={cn(isCompleted && "line-through")}>
+                              <span className="block">{target.deskripsi}</span>
+                              <span className="mt-1 block text-xs text-muted-foreground">
+                                {formatTargetSchedule(target)}
+                                {getTaskPlannedDuration(target)
+                                  ? ` - rencana ${getTaskPlannedDuration(target)} hari`
+                                  : ""}
+                              </span>
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+                      Project ini belum punya detail target tugas. Leader bisa menambahkannya dari menu Proyek.
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+                  Belum ada proyek aktif.
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
 
@@ -1005,6 +1307,162 @@ function MetricCard({
   );
 }
 
+function DeadlineRiskChart({
+  overdueCount,
+  dueSoonCount,
+  onTrackCount,
+  withoutDeadlineCount,
+}: {
+  overdueCount: number;
+  dueSoonCount: number;
+  onTrackCount: number;
+  withoutDeadlineCount: number;
+}) {
+  const total = overdueCount + dueSoonCount + onTrackCount + withoutDeadlineCount;
+  const rows = [
+    {
+      label: "Overdue",
+      value: overdueCount,
+      className: "bg-red-500",
+      textClassName: "text-red-700",
+    },
+    {
+      label: "Deadline 7 hari",
+      value: dueSoonCount,
+      className: "bg-amber-500",
+      textClassName: "text-amber-700",
+    },
+    {
+      label: "Aman",
+      value: onTrackCount,
+      className: "bg-emerald-500",
+      textClassName: "text-emerald-700",
+    },
+    {
+      label: "Tanpa deadline",
+      value: withoutDeadlineCount,
+      className: "bg-slate-400",
+      textClassName: "text-muted-foreground",
+    },
+  ];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Visual Risiko Deadline</CardTitle>
+        <CardDescription>Distribusi proyek aktif berdasarkan kedekatan deadline.</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        {rows.map((row) => {
+          const percent = total ? Math.round((row.value / total) * 100) : 0;
+
+          return (
+            <div key={row.label} className="grid gap-2">
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className={cn("font-medium", row.textClassName)}>{row.label}</span>
+                <span className="text-muted-foreground">
+                  {row.value} proyek - {percent}%
+                </span>
+              </div>
+              <div className="h-3 overflow-hidden rounded-full bg-muted">
+                <div className={cn("h-full rounded-full", row.className)} style={{ width: `${percent}%` }} />
+              </div>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
+}
+
+function DeadlineWatchlist({
+  projects,
+  today,
+}: {
+  projects: ProjectWithProgress[];
+  today: string;
+}) {
+  const sortedProjects = [...projects].sort((first, second) => {
+    if (!first.deadline && !second.deadline) return 0;
+    if (!first.deadline) return 1;
+    if (!second.deadline) return -1;
+
+    return first.deadline.localeCompare(second.deadline);
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Watchlist Deadline</CardTitle>
+        <CardDescription>Proyek yang perlu dipantau dari sisi waktu dan progress.</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        {sortedProjects.length > 0 ? (
+          sortedProjects.map((project) => {
+            const progress = project.progress;
+
+            return (
+              <div key={project.id} className="rounded-lg border p-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="font-medium">{project.nama_proyek}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {project.deadline ? `Deadline ${formatDate(project.deadline)}` : "Deadline belum diatur"}
+                    </p>
+                  </div>
+                  {project.deadline ? (
+                    <DeadlineBadge project={project} today={today} />
+                  ) : (
+                    <Badge variant="outline">Tanpa deadline</Badge>
+                  )}
+                </div>
+                <div className="mt-3 flex items-center gap-3">
+                  <Progress value={progress} />
+                  <span className="w-12 text-right text-xs font-semibold">{progress}%</span>
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+            Belum ada deadline aktif yang perlu dipantau.
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function DeadlineBadge({ project, today }: { project: Project; today: string }) {
+  if (!project.deadline) {
+    return <Badge variant="outline">Tanpa deadline</Badge>;
+  }
+
+  if (project.status === "Selesai") {
+    return <Badge variant="success">Selesai</Badge>;
+  }
+
+  const daysLeft = getDaysUntilDeadline(project.deadline, today);
+
+  if (daysLeft < 0) {
+    return (
+      <Badge variant="warning" className="bg-red-100 text-red-700">
+        Overdue {Math.abs(daysLeft)} hari
+      </Badge>
+    );
+  }
+
+  if (daysLeft === 0) {
+    return <Badge variant="warning">Hari ini</Badge>;
+  }
+
+  if (daysLeft <= 7) {
+    return <Badge variant="warning">{daysLeft} hari lagi</Badge>;
+  }
+
+  return <Badge variant="success">Aman {daysLeft} hari</Badge>;
+}
+
 function ActivityItem({
   task,
   projects,
@@ -1072,6 +1530,73 @@ function getLocalDateKey() {
   return `${year}-${month}-${day}`;
 }
 
+function createEmptyTargetDraft(): TargetDraft {
+  return {
+    id: `draft-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    deskripsi: "",
+    mulai: "",
+    deadline: "",
+  };
+}
+
+function getInitialTargetRows(project?: Project): TargetDraft[] {
+  if (!project?.target_detail_tugas.length) {
+    return [createEmptyTargetDraft()];
+  }
+
+  return project.target_detail_tugas.map((target) => ({
+    id: target.id,
+    deskripsi: target.deskripsi,
+    mulai: target.mulai ?? "",
+    deadline: target.deadline ?? "",
+  }));
+}
+
+function normalizeTargetRows(rows: TargetDraft[]) {
+  const seen = new Set<string>();
+
+  return rows.flatMap((row) => {
+    const deskripsi = row.deskripsi.trim();
+
+    if (!deskripsi || seen.has(deskripsi)) {
+      return [];
+    }
+
+    seen.add(deskripsi);
+    return [
+      {
+        deskripsi,
+        mulai: row.mulai || null,
+        deadline: row.deadline || null,
+      },
+    ];
+  });
+}
+
+function getProjectDeadlineFromTargets(targets: Array<{ deadline: string | null }>) {
+  return targets
+    .map((target) => target.deadline)
+    .filter((deadline): deadline is string => Boolean(deadline))
+    .sort()
+    .at(-1) ?? null;
+}
+
+function formatTargetSchedule(target: Project["target_detail_tugas"][number]) {
+  if (target.mulai && target.deadline) {
+    return `${formatDate(target.mulai)} sampai ${formatDate(target.deadline)}`;
+  }
+
+  if (target.mulai) {
+    return `Mulai ${formatDate(target.mulai)}`;
+  }
+
+  if (target.deadline) {
+    return `Deadline ${formatDate(target.deadline)}`;
+  }
+
+  return "Jadwal belum diatur";
+}
+
 async function fetchJson<T>(url: string, init?: RequestInit) {
   const response = await fetch(url, {
     ...init,
@@ -1101,6 +1626,12 @@ async function createProject(
         nama_proyek: project.nama_proyek,
         status: project.status,
         target_tugas: project.target_tugas,
+        target_detail_tugas: project.target_detail_tugas.map((item) => ({
+          deskripsi: item.deskripsi,
+          mulai: item.mulai,
+          deadline: item.deadline,
+        })),
+        deadline: project.deadline,
       }),
     });
     await refresh();
@@ -1122,6 +1653,12 @@ async function updateProject(
         nama_proyek: project.nama_proyek,
         status: project.status,
         target_tugas: project.target_tugas,
+        target_detail_tugas: project.target_detail_tugas.map((item) => ({
+          deskripsi: item.deskripsi,
+          mulai: item.mulai,
+          deadline: item.deadline,
+        })),
+        deadline: project.deadline,
       }),
     });
     await refresh();
@@ -1160,6 +1697,7 @@ async function createTask(
       method: "POST",
       body: JSON.stringify({
         project_id: task.project_id,
+        target_task_id: task.target_task_id,
         user_id: task.user_id,
         deskripsi: task.deskripsi,
         tanggal: task.tanggal,

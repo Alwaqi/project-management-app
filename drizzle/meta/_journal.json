@@ -8,6 +8,34 @@
       "when": 1777459357863,
       "tag": "0000_massive_sinister_six",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1777534859615,
+      "tag": "0001_pretty_expediter",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777535951657,
+      "tag": "0002_spotty_vermin",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1777536777163,
+      "tag": "0003_strong_ezekiel",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1777538201096,
+      "tag": "0004_furry_pestilence",
+      "breakpoints": true
     }
   ]
 }

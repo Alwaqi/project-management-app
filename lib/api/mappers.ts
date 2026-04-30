@@ -1,20 +1,48 @@
-import { getProjectProgress, Project, Task, User } from "@/lib/domain";
-import { ProjectRow, TaskRow } from "@/lib/db/schema";
+import {
+  getProjectCompletedTaskCount,
+  getProjectProgress,
+  Project,
+  Task,
+  User,
+} from "@/lib/domain";
+import { ProjectRow, ProjectTargetTaskRow, TaskRow } from "@/lib/db/schema";
 
-export function toProjectDto(project: ProjectRow) {
+export function toProjectDto(project: ProjectRow, targetTasks: ProjectTargetTaskRow[] = []) {
   return {
     id: project.id,
     nama_proyek: project.namaProyek,
     status: project.status,
-    target_tugas: project.targetTugas,
+    target_tugas: targetTasks.length || project.targetTugas,
+    target_detail_tugas: targetTasks
+      .slice()
+      .sort((first, second) => first.urutan - second.urutan)
+      .map((targetTask) => ({
+        id: targetTask.id,
+        deskripsi: targetTask.deskripsi,
+        mulai: targetTask.mulai,
+        deadline: targetTask.deadline,
+        urutan: targetTask.urutan,
+      })),
+    deadline: project.deadline,
     dibuat_pada: toDateKey(project.createdAt),
   };
+}
+
+export function groupTargetTasksByProject(targetTasks: ProjectTargetTaskRow[]) {
+  return targetTasks.reduce<Map<string, ProjectTargetTaskRow[]>>((groups, targetTask) => {
+    const group = groups.get(targetTask.projectId) ?? [];
+    group.push(targetTask);
+    groups.set(targetTask.projectId, group);
+
+    return groups;
+  }, new Map());
 }
 
 export function toTaskDto(task: TaskRow) {
   return {
     id: task.id,
     project_id: task.projectId,
+    target_task_id: task.targetTaskId,
     user_id: task.userId,
     deskripsi: task.deskripsi,
     tanggal: task.tanggal,
@@ -25,7 +53,7 @@ export function toProjectWithProgress(project: Project, tasks: Task[]) {
   return {
     ...project,
     progress: getProjectProgress(project, tasks),
-    total_tugas: tasks.filter((task) => task.project_id === project.id).length,
+    total_tugas: getProjectCompletedTaskCount(project, tasks),
   };
 }
 

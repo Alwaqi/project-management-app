@@ -81,6 +81,20 @@ export const project = pgTable("project", {
   namaProyek: text("nama_proyek").notNull(),
   status: projectStatusEnum("status").notNull().default("Berjalan"),
   targetTugas: integer("target_tugas").notNull().default(8),
+  deadline: date("deadline", { mode: "string" }),
+  createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
+});
+
+export const projectTargetTask = pgTable("project_target_task", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id")
+    .notNull()
+    .references(() => project.id, { onDelete: "cascade" }),
+  deskripsi: text("deskripsi").notNull(),
+  mulai: date("mulai", { mode: "string" }),
+  deadline: date("deadline", { mode: "string" }),
+  urutan: integer("urutan").notNull().default(1),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
 });
@@ -90,6 +104,9 @@ export const task = pgTable("task", {
   projectId: text("project_id")
     .notNull()
     .references(() => project.id, { onDelete: "cascade" }),
+  targetTaskId: text("target_task_id").references(() => projectTargetTask.id, {
+    onDelete: "set null",
+  }),
   userId: text("user_id")
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),
@@ -121,12 +138,24 @@ export const accountRelations = relations(account, ({ one }) => ({
 
 export const projectRelations = relations(project, ({ many }) => ({
   tasks: many(task),
+  targetTasks: many(projectTargetTask),
+}));
+
+export const projectTargetTaskRelations = relations(projectTargetTask, ({ one }) => ({
+  project: one(project, {
+    fields: [projectTargetTask.projectId],
+    references: [project.id],
+  }),
 }));
 
 export const taskRelations = relations(task, ({ one }) => ({
   project: one(project, {
     fields: [task.projectId],
     references: [project.id],
+  }),
+  targetTask: one(projectTargetTask, {
+    fields: [task.targetTaskId],
+    references: [projectTargetTask.id],
   }),
   user: one(user, {
     fields: [task.userId],
@@ -140,11 +169,13 @@ export const schema = {
   account,
   verification,
   project,
+  projectTargetTask,
   task,
   userRelations,
   sessionRelations,
   accountRelations,
   projectRelations,
+  projectTargetTaskRelations,
   taskRelations,
 };
 
@@ -152,5 +183,7 @@ export type UserRole = (typeof userRoleEnum.enumValues)[number];
 export type ProjectStatus = (typeof projectStatusEnum.enumValues)[number];
 export type ProjectRow = typeof project.$inferSelect;
 export type NewProject = typeof project.$inferInsert;
+export type ProjectTargetTaskRow = typeof projectTargetTask.$inferSelect;
+export type NewProjectTargetTask = typeof projectTargetTask.$inferInsert;
 export type TaskRow = typeof task.$inferSelect;
 export type NewTask = typeof task.$inferInsert;
