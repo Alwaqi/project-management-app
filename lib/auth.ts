@@ -20,7 +20,7 @@ const trustedOrigins = Array.from(
 );
 
 export const auth = betterAuth({
-  appName: "Ruang Kerja Proyek",
+  appName: "ProTrack SDK",
   baseURL: authBaseURL,
   secret:
     process.env.BETTER_AUTH_SECRET ??

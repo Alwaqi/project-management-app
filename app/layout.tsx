@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Ruang Kerja Proyek",
-  description: "Frontend manajemen proyek ringan untuk Leader dan Anggota Tim.",
+  title: "ProTrack SDK",
+  description: "Manajemen proyek ringan untuk Leader dan Anggota Tim SDK.",
 };
 
 export default function RootLayout({

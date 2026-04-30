@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -276,12 +277,18 @@ export default function Home() {
         <aside className="border-b bg-card lg:sticky lg:top-0 lg:h-screen lg:w-72 lg:border-b-0 lg:border-r">
           <div className="flex h-full flex-col gap-6 p-4">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary text-primary-foreground">
-                <BarChart3 className="h-5 w-5" aria-hidden="true" />
+              <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-md border bg-white">
+                <Image
+                  src="/logo-sdk.png"
+                  alt="Logo SDK"
+                  width={40}
+                  height={40}
+                  className="h-full w-full object-contain p-1"
+                />
               </div>
               <div>
-                <p className="text-sm font-semibold">Ruang Kerja Proyek</p>
-                <p className="text-xs text-muted-foreground">Lebih ringan dari Excel</p>
+                <p className="text-sm font-semibold">ProTrack SDK</p>
+                <p className="text-xs text-muted-foreground">Project tracking tim SDK</p>
               </div>
             </div>
 
@@ -420,10 +427,16 @@ function LoginScreen({
     <main className="grid min-h-screen place-items-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <div className="mb-2 flex h-11 w-11 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <FolderKanban className="h-5 w-5" aria-hidden="true" />
+          <div className="mb-2 flex h-12 w-12 items-center justify-center overflow-hidden rounded-md border bg-white">
+            <Image
+              src="/logo-sdk.png"
+              alt="Logo SDK"
+              width={48}
+              height={48}
+              className="h-full w-full object-contain p-1"
+            />
           </div>
-          <CardTitle className="text-xl">Masuk ke Ruang Kerja Proyek</CardTitle>
+          <CardTitle className="text-xl">Masuk ke ProTrack SDK</CardTitle>
           <CardDescription>
             Daftar memakai email dan password, lalu langsung masuk ke ruang kerja tim.
           </CardDescription>
