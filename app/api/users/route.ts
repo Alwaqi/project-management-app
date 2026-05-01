@@ -20,6 +20,7 @@ export async function GET() {
         nama: item.name,
         email: item.email,
         role: item.role,
+        team_type: item.teamType,
       })),
     });
   } catch (error) {

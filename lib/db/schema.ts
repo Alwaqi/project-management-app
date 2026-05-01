@@ -11,6 +11,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 export const userRoleEnum = pgEnum("user_role", ["Leader", "Tim"]);
+export const teamTypeEnum = pgEnum("team_type", ["Tim Sales", "Tim SE", "Tim Admin"]);
 export const projectStatusEnum = pgEnum("project_status", ["Menunggu", "Berjalan", "Selesai"]);
 export const targetTaskStatusEnum = pgEnum("target_task_status", [
   "Belum Mulai",
@@ -28,6 +29,7 @@ export const user = pgTable(
     emailVerified: boolean("email_verified").notNull().default(false),
     image: text("image"),
     role: userRoleEnum("role").notNull().default("Tim"),
+    teamType: teamTypeEnum("team_type").notNull().default("Tim Sales"),
     createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
   },
@@ -195,6 +197,7 @@ export const schema = {
 };
 
 export type UserRole = (typeof userRoleEnum.enumValues)[number];
+export type TeamType = (typeof teamTypeEnum.enumValues)[number];
 export type ProjectStatus = (typeof projectStatusEnum.enumValues)[number];
 export type TargetTaskStatus = (typeof targetTaskStatusEnum.enumValues)[number];
 export type ProjectRow = typeof project.$inferSelect;

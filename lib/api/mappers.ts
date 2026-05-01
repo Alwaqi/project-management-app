@@ -86,6 +86,7 @@ export function getMemberPerformance(users: User[], projects: Project[], tasks: 
         nama: user.nama,
         email: user.email,
         role: user.role,
+        team_type: user.team_type,
         dikerjakan: inProgress,
         selesai: completed,
         total: userTargetTasks.length,

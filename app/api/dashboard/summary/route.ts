@@ -41,6 +41,7 @@ export async function GET(request: Request) {
       nama: item.name,
       email: item.email,
       role: item.role,
+      team_type: item.teamType,
     }));
     const today = getLocalDateKey();
     const projectsWithProgress = projects.map((item) => toProjectWithProgress(item, tasks));

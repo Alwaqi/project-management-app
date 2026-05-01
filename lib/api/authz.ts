@@ -4,13 +4,14 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { user } from "@/lib/db/schema";
-import type { Role } from "@/lib/domain";
+import type { Role, TeamType } from "@/lib/domain";
 
 export type RequestUser = {
   id: string;
   nama: string;
   email: string;
   role: Role;
+  team_type: TeamType;
 };
 
 export async function getRequestUser(request: Request) {
@@ -28,6 +29,7 @@ export async function getRequestUser(request: Request) {
       nama: user.name,
       email: user.email,
       role: user.role,
+      team_type: user.teamType,
     })
     .from(user)
     .where(eq(user.id, session.user.id))

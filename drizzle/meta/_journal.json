@@ -50,6 +50,13 @@
       "when": 1777603521646,
       "tag": "0006_tranquil_black_panther",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1777607536190,
+      "tag": "0007_elite_ravenous",
+      "breakpoints": true
     }
   ]
 }

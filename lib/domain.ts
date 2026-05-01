@@ -1,6 +1,9 @@
 export type Role = "Leader" | "Tim";
+export type TeamType = "Tim Sales" | "Tim SE" | "Tim Admin";
 export type ProjectStatus = "Menunggu" | "Berjalan" | "Selesai";
 export type TargetTaskStatus = "Belum Mulai" | "Dikerjakan" | "Koreksi" | "Selesai";
+
+export const teamTypeOptions: TeamType[] = ["Tim Sales", "Tim SE", "Tim Admin"];
 
 export type TargetDetailTask = {
   id: string;
@@ -17,6 +20,7 @@ export type User = {
   nama: string;
   email: string;
   role: Role;
+  team_type: TeamType;
 };
 
 export type Project = {

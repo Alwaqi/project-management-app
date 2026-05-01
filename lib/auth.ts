@@ -50,6 +50,12 @@ export const auth = betterAuth({
         defaultValue: "Tim",
         input: true,
       },
+      teamType: {
+        type: ["Tim Sales", "Tim SE", "Tim Admin"],
+        required: false,
+        defaultValue: "Tim Sales",
+        input: true,
+      },
     },
   },
   plugins: [nextCookies()],

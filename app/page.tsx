@@ -68,9 +68,11 @@ import {
   Project,
   ProjectStatus,
   Role,
+  TeamType,
   TargetTaskStatus,
   Task,
   User,
+  teamTypeOptions,
 } from "@/lib/domain";
 import { cn } from "@/lib/utils";
 
@@ -106,6 +108,7 @@ type DashboardSummary = {
     nama: string;
     email: string;
     role: Role;
+    team_type: TeamType;
     dikerjakan: number;
     selesai: number;
     total: number;
@@ -220,12 +223,19 @@ export default function Home() {
     showToast("Berhasil masuk ke ruang kerja.");
   };
 
-  const handleRegister = async (name: string, email: string, password: string, role: Role) => {
+  const handleRegister = async (
+    name: string,
+    email: string,
+    password: string,
+    role: Role,
+    teamType: TeamType,
+  ) => {
     const { error: signUpError } = await authClient.signUp.email({
       name,
       email,
       password,
       role,
+      teamType,
     });
 
     if (signUpError) {
@@ -327,6 +337,7 @@ export default function Home() {
                 <Badge variant={activeUser.role === "Leader" ? "default" : "outline"}>
                   {activeUser.role}
                 </Badge>
+                <Badge variant="secondary">{activeUser.team_type}</Badge>
               </div>
               <Button
                 type="button"
@@ -401,13 +412,20 @@ function LoginScreen({
   onRegister,
 }: {
   onLogin: (email: string, password: string) => Promise<void>;
-  onRegister: (name: string, email: string, password: string, role: Role) => Promise<void>;
+  onRegister: (
+    name: string,
+    email: string,
+    password: string,
+    role: Role,
+    teamType: TeamType,
+  ) => Promise<void>;
 }) {
   const [mode, setMode] = useState<AuthMode>("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<Role>("Tim");
+  const [teamType, setTeamType] = useState<TeamType>("Tim Sales");
   const [notice, setNotice] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -420,7 +438,7 @@ function LoginScreen({
 
     try {
       if (mode === "register") {
-        await onRegister(name, email, password, role);
+        await onRegister(name, email, password, role, teamType);
       } else {
         await onLogin(email, password);
       }
@@ -518,17 +536,34 @@ function LoginScreen({
               />
             </div>
             {mode === "register" && (
-              <div className="grid gap-2">
-                <Label>Role awal</Label>
-                <Select value={role} onValueChange={(value) => setRole(value as Role)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Pilih role" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Tim">Anggota Tim</SelectItem>
-                    <SelectItem value="Leader">Leader</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-2">
+                  <Label>Role awal</Label>
+                  <Select value={role} onValueChange={(value) => setRole(value as Role)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pilih role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Tim">Anggota Tim</SelectItem>
+                      <SelectItem value="Leader">Leader</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label>Jenis tim</Label>
+                  <Select value={teamType} onValueChange={(value) => setTeamType(value as TeamType)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pilih jenis tim" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {teamTypeOptions.map((option) => (
+                        <SelectItem key={option} value={option}>
+                          {option}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             )}
             {notice && (
@@ -679,6 +714,7 @@ function DashboardView({
             <TableHeader>
               <TableRow>
                 <TableHead>Anggota</TableHead>
+                <TableHead>Jenis Tim</TableHead>
                 <TableHead className="text-right">Dikerjakan</TableHead>
                 <TableHead className="text-right">Selesai</TableHead>
                 <TableHead className="text-right">Total</TableHead>
@@ -698,6 +734,9 @@ function DashboardView({
                         <p className="text-xs text-muted-foreground">{member.email}</p>
                       </div>
                     </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline">{member.team_type}</Badge>
                   </TableCell>
                   <TableCell className="text-right font-semibold">{member.inProgress}</TableCell>
                   <TableCell className="text-right font-semibold text-primary">
@@ -1133,7 +1172,7 @@ function ProjectDialog({
                         <SelectItem value="unassigned">Belum ditugaskan</SelectItem>
                         {users.map((user) => (
                           <SelectItem key={user.id} value={user.id}>
-                            {user.nama}
+                            {user.nama} - {user.team_type}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -1657,7 +1696,12 @@ function ActivityItem({
   return (
     <div className="rounded-lg border p-3">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm font-medium">{user?.nama ?? "Anggota Tim"}</p>
+        <div>
+          <p className="text-sm font-medium">{user?.nama ?? "Anggota Tim"}</p>
+          {user?.team_type ? (
+            <p className="text-xs text-muted-foreground">{user.team_type}</p>
+          ) : null}
+        </div>
         <span className="text-xs text-muted-foreground">{formatDate(task.tanggal)}</span>
       </div>
       <p className="mt-2 text-sm text-foreground">{task.deskripsi}</p>
