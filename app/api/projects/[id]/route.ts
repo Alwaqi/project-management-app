@@ -9,6 +9,7 @@ import {
   getRequestUser,
   unauthorizedResponse,
 } from "@/lib/api/authz";
+import { sendTargetAssignmentEmails } from "@/lib/api/assignment-notifications";
 import { toProjectDto } from "@/lib/api/mappers";
 import { databaseUnavailableResponse, handleRouteError } from "@/lib/api/responses";
 import { projectUpdateSchema } from "@/lib/api/validation";
@@ -99,12 +100,31 @@ export async function PATCH(request: Request, context: RouteContext) {
           .select()
           .from(projectTargetTask)
           .where(eq(projectTargetTask.projectId, id));
+        const existingTargetsById = new Map(
+          existingTargetTasks.map((targetTask) => [targetTask.id, targetTask]),
+        );
         const existingTargetIds = new Set(existingTargetTasks.map((targetTask) => targetTask.id));
         const submittedExistingIds = new Set(
           targetItems
             .map((item) => item.id)
             .filter((targetId): targetId is string => Boolean(targetId && existingTargetIds.has(targetId))),
         );
+
+        const assignmentTargets = targetItems
+          .filter((item) => {
+            if (!item.assignedUserId) {
+              return false;
+            }
+
+            const existingTarget = item.id ? existingTargetsById.get(item.id) : undefined;
+            return !existingTarget || existingTarget.assignedUserId !== item.assignedUserId;
+          })
+          .map((item) => ({
+            assignedUserId: item.assignedUserId,
+            deskripsi: item.deskripsi,
+            mulai: item.mulai,
+            deadline: item.deadline,
+          }));
 
         await Promise.all(
           existingTargetTasks
@@ -143,31 +163,37 @@ export async function PATCH(request: Request, context: RouteContext) {
             });
           }),
         );
+
+        return {
+          project: projectRow,
+          assignmentTargets,
+        };
       }
 
-      return projectRow;
+      return {
+        project: projectRow,
+        assignmentTargets: [],
+      };
     });
 
-    if (!updatedProject) {
+    if (!updatedProject.project) {
       return NextResponse.json({ error: "Proyek tidak ditemukan" }, { status: 404 });
     }
 
+    await sendTargetAssignmentEmails({
+      projectName: updatedProject.project.namaProyek,
+      targets: updatedProject.assignmentTargets,
+      assignedBy: currentUser.nama,
+    });
+
+    const targetTasksForResponse = await db
+      .select()
+      .from(projectTargetTask)
+      .where(eq(projectTargetTask.projectId, id))
+      .orderBy(asc(projectTargetTask.urutan));
+
     return NextResponse.json({
-      data: toProjectDto(
-        updatedProject,
-        (targetItems ?? []).map((item, index) => ({
-          id: item.id ?? "",
-          projectId: updatedProject.id,
-          deskripsi: item.deskripsi,
-          assignedUserId: item.assignedUserId,
-          status: item.status,
-          mulai: item.mulai,
-          deadline: item.deadline,
-          urutan: index + 1,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        })),
-      ),
+      data: toProjectDto(updatedProject.project, targetTasksForResponse),
     });
   } catch (error) {
     return handleRouteError(error);

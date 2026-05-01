@@ -16,6 +16,7 @@ import {
   toTaskDto,
 } from "@/lib/api/mappers";
 import { databaseUnavailableResponse, handleRouteError } from "@/lib/api/responses";
+import { sendTargetAssignmentEmails } from "@/lib/api/assignment-notifications";
 import { projectCreateSchema } from "@/lib/api/validation";
 
 export const runtime = "nodejs";
@@ -86,41 +87,45 @@ export async function POST(request: Request) {
         deadline: projectDeadline,
       }).returning();
 
-      if (targetItems.length > 0) {
-        await tx.insert(projectTargetTask).values(
-          targetItems.map((item, index) => ({
-            id: crypto.randomUUID(),
-            projectId: newProject.id,
-            deskripsi: item.deskripsi,
-            assignedUserId: item.assignedUserId,
-            status: item.status,
-            mulai: item.mulai,
-            deadline: item.deadline,
-            urutan: index + 1,
-          })),
-        );
-      }
+      const newTargetTasks =
+        targetItems.length > 0
+          ? await tx
+              .insert(projectTargetTask)
+              .values(
+                targetItems.map((item, index) => ({
+                  id: crypto.randomUUID(),
+                  projectId: newProject.id,
+                  deskripsi: item.deskripsi,
+                  assignedUserId: item.assignedUserId,
+                  status: item.status,
+                  mulai: item.mulai,
+                  deadline: item.deadline,
+                  urutan: index + 1,
+                })),
+              )
+              .returning()
+          : [];
 
-      return newProject;
+      return {
+        project: newProject,
+        targetTasks: newTargetTasks,
+      };
+    });
+
+    await sendTargetAssignmentEmails({
+      projectName: createdProject.project.namaProyek,
+      targets: createdProject.targetTasks.map((targetTask) => ({
+        assignedUserId: targetTask.assignedUserId,
+        deskripsi: targetTask.deskripsi,
+        mulai: targetTask.mulai,
+        deadline: targetTask.deadline,
+      })),
+      assignedBy: currentUser.nama,
     });
 
     return NextResponse.json(
       {
-        data: toProjectDto(
-          createdProject,
-          targetItems.map((item, index) => ({
-            id: "",
-            projectId: createdProject.id,
-            deskripsi: item.deskripsi,
-            assignedUserId: item.assignedUserId,
-            status: item.status,
-            mulai: item.mulai,
-            deadline: item.deadline,
-            urutan: index + 1,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          })),
-        ),
+        data: toProjectDto(createdProject.project, createdProject.targetTasks),
       },
       { status: 201 },
     );

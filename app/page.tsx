@@ -236,26 +236,12 @@ export default function Home() {
       password,
       role,
       teamType,
+      callbackURL: "/",
     });
 
     if (signUpError) {
       throw new Error(getAuthErrorMessage(signUpError.message));
     }
-
-    const { error: signInError } = await authClient.signIn.email({
-      email,
-      password,
-    });
-
-    if (signInError) {
-      throw new Error(getAuthErrorMessage(signInError.message));
-    }
-
-    authClient.$store.notify("$sessionSignal");
-    await session.refetch({ query: { disableCookieCache: true } });
-    const registeredUser = await loadWorkspace(email);
-    setActiveView((registeredUser?.role ?? role) === "Leader" ? "dashboard" : "journal");
-    showToast("Akun berhasil dibuat.");
   };
 
   const handleLogout = async () => {
@@ -439,6 +425,9 @@ function LoginScreen({
     try {
       if (mode === "register") {
         await onRegister(name, email, password, role, teamType);
+        setMode("login");
+        setPassword("");
+        setNotice("Akun dibuat. Cek email aktif Anda dan klik link verifikasi sebelum masuk.");
       } else {
         await onLogin(email, password);
       }
@@ -464,7 +453,7 @@ function LoginScreen({
           </div>
           <CardTitle className="text-xl">Masuk ke ProTrack SDK</CardTitle>
           <CardDescription>
-            Daftar memakai email dan password, lalu langsung masuk ke ruang kerja tim.
+            Daftar memakai email aktif, verifikasi lewat link email, lalu masuk ke ruang kerja tim.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -582,7 +571,7 @@ function LoginScreen({
             </Button>
           </form>
           <div className="mt-5 grid gap-2 rounded-md border bg-muted/45 p-3 text-xs text-muted-foreground">
-            <p>Akun baru langsung aktif setelah pendaftaran berhasil.</p>
+            <p>Akun baru aktif setelah link verifikasi email diklik.</p>
             <p>Password minimal 8 karakter.</p>
           </div>
         </CardContent>
@@ -2033,6 +2022,10 @@ function getErrorMessage(error: unknown) {
 function getAuthErrorMessage(message?: string) {
   if (!message) {
     return "Autentikasi gagal. Coba lagi.";
+  }
+
+  if (message === "EMAIL_NOT_VERIFIED" || message.toLowerCase().includes("email not verified")) {
+    return "Email belum diverifikasi. Cek inbox email Anda untuk link verifikasi.";
   }
 
   return message;

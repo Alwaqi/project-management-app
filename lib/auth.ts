@@ -4,6 +4,7 @@ import { nextCookies } from "better-auth/next-js";
 
 import { db } from "@/lib/db";
 import { schema } from "@/lib/db/schema";
+import { sendEmail } from "@/lib/email";
 
 function readEnv(name: string) {
   const value = process.env[name]?.trim();
@@ -41,6 +42,41 @@ export const auth = betterAuth({
   }),
   emailAndPassword: {
     enabled: true,
+    requireEmailVerification: true,
+  },
+  emailVerification: {
+    sendOnSignUp: true,
+    sendOnSignIn: true,
+    autoSignInAfterVerification: true,
+    expiresIn: 60 * 60 * 24,
+    sendVerificationEmail: async ({ user, url }) => {
+      const result = await sendEmail({
+        to: user.email,
+        subject: "Verifikasi email ProTrack SDK",
+        html: `
+          <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111827;">
+            <h2 style="margin: 0 0 12px;">Verifikasi email Anda</h2>
+            <p>Halo ${user.name}, klik tombol di bawah ini untuk mengaktifkan akun ProTrack SDK.</p>
+            <p style="margin: 24px 0;">
+              <a href="${url}" style="background: #111827; color: #ffffff; padding: 12px 16px; border-radius: 8px; text-decoration: none;">
+                Verifikasi Email
+              </a>
+            </p>
+            <p>Link ini berlaku selama 24 jam. Jika Anda tidak membuat akun, abaikan email ini.</p>
+          </div>
+        `,
+        text: [
+          `Halo ${user.name},`,
+          "Klik link berikut untuk mengaktifkan akun ProTrack SDK:",
+          url,
+          "Link ini berlaku selama 24 jam. Jika Anda tidak membuat akun, abaikan email ini.",
+        ].join("\n\n"),
+      });
+
+      if (!result.sent) {
+        throw new Error("Konfigurasi email belum tersedia");
+      }
+    },
   },
   user: {
     additionalFields: {
