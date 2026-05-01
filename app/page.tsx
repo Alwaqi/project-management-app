@@ -272,10 +272,10 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-background">
-      <div className="flex min-h-screen flex-col lg:flex-row">
-        <aside className="border-b bg-card lg:sticky lg:top-0 lg:h-screen lg:w-72 lg:border-b-0 lg:border-r">
-          <div className="flex h-full flex-col gap-6 p-4">
+    <main className="min-h-screen w-full overflow-x-hidden bg-background">
+      <div className="flex min-h-screen w-full flex-col lg:flex-row">
+        <aside className="w-full border-b bg-card lg:sticky lg:top-0 lg:h-screen lg:w-72 lg:shrink-0 lg:border-b-0 lg:border-r">
+          <div className="flex h-full min-w-0 flex-col gap-4 p-3 sm:gap-6 sm:p-4">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-md border bg-white">
                 <Image
@@ -286,13 +286,13 @@ export default function Home() {
                   className="h-full w-full object-contain p-1"
                 />
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-sm font-semibold">ProTrack SDK</p>
                 <p className="text-xs text-muted-foreground">Project tracking tim SDK</p>
               </div>
             </div>
 
-            <nav className="grid gap-1 sm:grid-cols-3 lg:grid-cols-1">
+            <nav className="grid grid-cols-3 gap-2 lg:grid-cols-1">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isDisabled = activeUser.role === "Tim" && item.id === "dashboard";
@@ -302,28 +302,30 @@ export default function Home() {
                     key={item.id}
                     type="button"
                     variant={activeView === item.id ? "secondary" : "ghost"}
-                    className="justify-start gap-2"
+                    className="h-auto min-h-10 justify-center gap-2 px-2 text-xs sm:text-sm lg:justify-start"
                     disabled={isDisabled}
                     onClick={() => setActiveView(item.id)}
                     title={isDisabled ? "Khusus Leader" : item.label}
                   >
                     <Icon className="h-4 w-4" aria-hidden="true" />
-                    {item.label}
+                    <span className="truncate">{item.label}</span>
                   </Button>
                 );
               })}
             </nav>
 
             <div className="mt-auto rounded-lg border bg-background p-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
+              <div className="grid min-w-0 gap-3">
+                <div className="min-w-0">
                   <p className="text-sm font-medium">{activeUser.nama}</p>
                   <p className="break-all text-xs text-muted-foreground">{activeUser.email}</p>
                 </div>
-                <Badge variant={activeUser.role === "Leader" ? "default" : "outline"}>
-                  {activeUser.role}
-                </Badge>
-                <Badge variant="secondary">{activeUser.team_type}</Badge>
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant={activeUser.role === "Leader" ? "default" : "outline"}>
+                    {activeUser.role}
+                  </Badge>
+                  <Badge variant="secondary">{activeUser.team_type}</Badge>
+                </div>
               </div>
               <Button
                 type="button"
@@ -339,7 +341,7 @@ export default function Home() {
           </div>
         </aside>
 
-        <section className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
+        <section className="w-full min-w-0 flex-1 p-3 sm:p-6 lg:p-8">
           {activeView === "dashboard" && (
             <DashboardView
               projects={projects}
@@ -662,7 +664,7 @@ function DashboardView({
         }
       />
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+      <div className="grid min-w-0 gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         <MetricCard label="Proyek Berjalan" value={metrics?.proyek_berjalan ?? activeProjects.length} icon={FolderKanban} />
         <MetricCard label="Tugas Hari Ini" value={metrics?.tugas_hari_ini ?? todayTasks.length} icon={ClipboardList} />
         <MetricCard label="Rata-rata Progress" value={`${metrics?.rata_rata_progress ?? averageProgress}%`} icon={BarChart3} />
@@ -671,7 +673,7 @@ function DashboardView({
         <MetricCard label="Deadline 7 Hari" value={metrics?.deadline_minggu_ini ?? dueSoonProjects.length} icon={CalendarClock} />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1fr_1.15fr]">
+      <div className="grid min-w-0 gap-4 sm:gap-6 xl:grid-cols-[1fr_1.15fr]">
         <DeadlineRiskChart
           overdueCount={overdueProjects.length}
           dueSoonCount={dueSoonProjects.length}
@@ -747,7 +749,7 @@ function DashboardView({
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
+      <div className="grid min-w-0 gap-4 sm:gap-6 xl:grid-cols-[1.5fr_1fr]">
         <Card>
           <CardHeader>
             <CardTitle>Progress Proyek</CardTitle>
@@ -1077,7 +1079,7 @@ function ProjectDialog({
           {project ? "Edit" : "Buat Proyek Baru"}
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+      <DialogContent className="bottom-2 left-2 right-2 top-2 max-h-none w-auto max-w-none translate-x-0 translate-y-0 overflow-y-auto sm:left-1/2 sm:right-auto sm:top-1/2 sm:bottom-auto sm:max-h-[90vh] sm:w-[calc(100%-2rem)] sm:max-w-3xl sm:-translate-x-1/2 sm:-translate-y-1/2">
         <DialogHeader>
           <DialogTitle>{project ? "Edit Proyek" : "Buat Proyek Baru"}</DialogTitle>
           <DialogDescription>
@@ -1116,13 +1118,13 @@ function ProjectDialog({
             </div>
           </div>
           <div className="grid gap-3">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <Label>Detail target tugas</Label>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                className="gap-2"
+                className="w-full gap-2 sm:w-auto"
                 onClick={() => setTargetRows((currentRows) => [...currentRows, createEmptyTargetDraft()])}
               >
                 <Plus className="h-4 w-4" aria-hidden="true" />
@@ -1289,7 +1291,7 @@ function JournalView({
         description="Ubah status detail target sesuai progres pekerjaan harian."
       />
 
-      <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+      <div className="grid min-w-0 gap-4 sm:gap-6 xl:grid-cols-[0.9fr_1.1fr]">
         <Card>
           <CardHeader>
             <CardTitle>Checklist Detail Tugas</CardTitle>
@@ -1423,12 +1425,12 @@ function PageHeader({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-normal">{title}</h1>
+    <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <div className="min-w-0">
+        <h1 className="text-xl font-semibold tracking-normal sm:text-2xl">{title}</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{description}</p>
       </div>
-      {action}
+      {action ? <div className="w-full sm:w-auto">{action}</div> : null}
     </div>
   );
 }
@@ -1445,7 +1447,7 @@ function MetricCard({
   return (
     <Card>
       <CardContent className="flex items-center justify-between gap-4 p-5">
-        <div>
+        <div className="min-w-0">
           <p className="text-sm text-muted-foreground">{label}</p>
           <p className="mt-1 text-2xl font-semibold">{value}</p>
         </div>
