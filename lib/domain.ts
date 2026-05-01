@@ -1,5 +1,10 @@
 export type Role = "Leader" | "Tim";
-export type TeamType = "Tim Sales" | "Tim SE" | "Tim Admin" | "Tim Marketing dan Konten";
+export type TeamType =
+  | "Tim Sales"
+  | "Tim SE"
+  | "Tim Admin"
+  | "Tim Marketing dan Konten"
+  | "Tim Edukasi";
 export type ProjectStatus = "Menunggu" | "Berjalan" | "Selesai";
 export type TargetTaskStatus = "Belum Mulai" | "Dikerjakan" | "Koreksi" | "Selesai";
 
@@ -8,6 +13,7 @@ export const teamTypeOptions: TeamType[] = [
   "Tim SE",
   "Tim Admin",
   "Tim Marketing dan Konten",
+  "Tim Edukasi",
 ];
 
 export type TargetDetailTask = {

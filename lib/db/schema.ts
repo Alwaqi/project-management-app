@@ -16,6 +16,7 @@ export const teamTypeEnum = pgEnum("team_type", [
   "Tim SE",
   "Tim Admin",
   "Tim Marketing dan Konten",
+  "Tim Edukasi",
 ]);
 export const projectStatusEnum = pgEnum("project_status", ["Menunggu", "Berjalan", "Selesai"]);
 export const targetTaskStatusEnum = pgEnum("target_task_status", [

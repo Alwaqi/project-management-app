@@ -1,0 +1,1 @@
+ALTER TYPE "public"."team_type" ADD VALUE 'Tim Edukasi';
