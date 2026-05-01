@@ -8,6 +8,7 @@ import {
   toProjectWithProgress,
   toTaskDto,
 } from "@/lib/api/mappers";
+import { forbiddenResponse, getRequestUser, unauthorizedResponse } from "@/lib/api/authz";
 import { databaseUnavailableResponse, handleRouteError } from "@/lib/api/responses";
 import { db } from "@/lib/db";
 import { project, projectTargetTask, task, user } from "@/lib/db/schema";
@@ -15,11 +16,15 @@ import { getDaysUntilDeadline, getLocalDateKey, getProjectProgress, isProjectOve
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request: Request) {
   const unavailable = databaseUnavailableResponse();
   if (unavailable) return unavailable;
 
   try {
+    const currentUser = await getRequestUser(request);
+    if (!currentUser) return unauthorizedResponse();
+    if (currentUser.role !== "Leader") return forbiddenResponse("Dashboard hanya untuk Leader");
+
     const [projectRows, targetTaskRows, taskRows, userRows] = await Promise.all([
       db.select().from(project).orderBy(desc(project.createdAt)),
       db.select().from(projectTargetTask),

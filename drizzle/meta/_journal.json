@@ -36,6 +36,20 @@
       "when": 1777538201096,
       "tag": "0004_furry_pestilence",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1777579640659,
+      "tag": "0005_unknown_dust",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1777603521646,
+      "tag": "0006_tranquil_black_panther",
+      "breakpoints": true
     }
   ]
 }

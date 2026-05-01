@@ -1,9 +1,12 @@
 export type Role = "Leader" | "Tim";
 export type ProjectStatus = "Menunggu" | "Berjalan" | "Selesai";
+export type TargetTaskStatus = "Belum Mulai" | "Dikerjakan" | "Koreksi" | "Selesai";
 
 export type TargetDetailTask = {
   id: string;
   deskripsi: string;
+  assigned_user_id: string | null;
+  status: TargetTaskStatus;
   mulai: string | null;
   deadline: string | null;
   urutan: number;
@@ -61,8 +64,14 @@ export function getProjectCompletedTaskCount(project: Project, tasks: Task[]) {
       .map((task) => task.target_task_id)
       .filter((targetTaskId): targetTaskId is string => Boolean(targetTaskId)),
   );
+  const statusCompletedTargetIds = new Set(
+    project.target_detail_tugas
+      .filter((target) => target.status === "Selesai")
+      .map((target) => target.id),
+  );
+  const completedIds = new Set([...completedTargetIds, ...statusCompletedTargetIds]);
 
-  return Array.from(completedTargetIds).filter((targetTaskId) => targetIds.has(targetTaskId))
+  return Array.from(completedIds).filter((targetTaskId) => targetIds.has(targetTaskId))
     .length;
 }
 

@@ -68,6 +68,7 @@ import {
   Project,
   ProjectStatus,
   Role,
+  TargetTaskStatus,
   Task,
   User,
 } from "@/lib/domain";
@@ -84,6 +85,8 @@ type ProjectWithProgress = Project & {
 type TargetDraft = {
   id: string;
   deskripsi: string;
+  assigned_user_id: string;
+  status: TargetTaskStatus;
   mulai: string;
   deadline: string;
 };
@@ -149,20 +152,21 @@ export default function Home() {
       setIsLoadingData(true);
 
       try {
-        const [usersResponse, projectsResponse, tasksResponse, summaryResponse] = await Promise.all([
-          fetchJson<User[]>("/api/users"),
+        const usersResponse = await fetchJson<User[]>("/api/users");
+        const email = sessionEmail ?? session.data?.user?.email;
+        const currentUser = usersResponse.find((user) => user.email === email);
+        const [projectsResponse, tasksResponse, summaryResponse] = await Promise.all([
           fetchJson<ProjectWithProgress[]>("/api/projects"),
           fetchJson<Task[]>("/api/tasks"),
-          fetchJson<DashboardSummary>("/api/dashboard/summary"),
+          currentUser?.role === "Leader"
+            ? fetchJson<DashboardSummary>("/api/dashboard/summary")
+            : Promise.resolve(null),
         ]);
 
         setUsers(usersResponse);
         setProjects(projectsResponse);
         setTasks(tasksResponse);
         setDashboardSummary(summaryResponse);
-
-        const email = sessionEmail ?? session.data?.user?.email;
-        const currentUser = usersResponse.find((user) => user.email === email);
 
         if (currentUser) {
           setActiveUser(currentUser);
@@ -272,7 +276,7 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-background">
+    <main className="min-h-screen overflow-x-hidden bg-background">
       <div className="flex min-h-screen flex-col lg:flex-row">
         <aside className="border-b bg-card lg:sticky lg:top-0 lg:h-screen lg:w-72 lg:border-b-0 lg:border-r">
           <div className="flex h-full flex-col gap-6 p-4">
@@ -338,7 +342,7 @@ export default function Home() {
           </div>
         </aside>
 
-        <section className="flex-1 p-4 sm:p-6 lg:p-8">
+        <section className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
           {activeView === "dashboard" && (
             <DashboardView
               projects={projects}
@@ -353,6 +357,7 @@ export default function Home() {
               activeUser={activeUser}
               projects={projects}
               tasks={tasks}
+              users={users}
               onCreateProject={(project) => {
                 void createProject(project, loadWorkspace, showToast);
               }}
@@ -362,6 +367,9 @@ export default function Home() {
               onCloseProject={(projectId) => {
                 void closeProject(projectId, loadWorkspace, showToast);
               }}
+              onDeleteProject={(project) => {
+                void deleteProject(project, loadWorkspace, showToast);
+              }}
             />
           )}
           {activeView === "journal" && (
@@ -370,8 +378,8 @@ export default function Home() {
               projects={projects}
               tasks={tasks}
               users={users}
-              onCreateTask={(task) => {
-                void createTask(task, loadWorkspace, showToast);
+              onUpdateTaskStatus={(projectId, targetTaskId, status) => {
+                void updateTaskStatus(projectId, targetTaskId, status, loadWorkspace, showToast);
               }}
             />
           )}
@@ -781,16 +789,20 @@ function ProjectView({
   activeUser,
   projects,
   tasks,
+  users,
   onCreateProject,
   onUpdateProject,
   onCloseProject,
+  onDeleteProject,
 }: {
   activeUser: User;
   projects: ProjectWithProgress[];
   tasks: Task[];
+  users: User[];
   onCreateProject: (project: Project) => void;
   onUpdateProject: (project: Project) => void;
   onCloseProject: (projectId: string) => void;
+  onDeleteProject: (project: Project) => void;
 }) {
   const [expandedProjectIds, setExpandedProjectIds] = useState<Set<string>>(new Set());
 
@@ -813,7 +825,7 @@ function ProjectView({
       <PageHeader
         title="Manajemen Proyek"
         description="Buat, edit, dan tutup proyek tanpa spreadsheet manual."
-        action={activeUser.role === "Leader" ? <ProjectDialog onSubmit={onCreateProject} /> : null}
+        action={activeUser.role === "Leader" ? <ProjectDialog users={users} onSubmit={onCreateProject} /> : null}
       />
 
       <Card>
@@ -838,6 +850,11 @@ function ProjectView({
               {projects.map((project) => {
                 const progress = project.progress ?? getProjectProgress(project, tasks);
                 const isExpanded = expandedProjectIds.has(project.id);
+                const completedTargetIds = new Set(
+                  tasks
+                    .filter((task) => task.project_id === project.id && task.target_task_id)
+                    .map((task) => task.target_task_id),
+                );
 
                 return (
                   <TableRow key={project.id}>
@@ -865,9 +882,21 @@ function ProjectView({
                             {isExpanded && (
                               <ul className="grid gap-1 rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
                                 {project.target_detail_tugas.map((item) => (
-                                  <li key={item.id} className="flex gap-2">
-                                    <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-                                    <span>{item.deskripsi}</span>
+                                  <li key={item.id} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="flex min-w-0 gap-2">
+                                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                                      <span className="min-w-0">{item.deskripsi}</span>
+                                    </div>
+                                    <div className="ml-3 flex flex-wrap items-center gap-2 sm:ml-0">
+                                      <span className="text-muted-foreground">
+                                        {getAssignedUserName(item.assigned_user_id, users)}
+                                      </span>
+                                      <TargetStatusBadge
+                                        target={item}
+                                        today={getLocalDateKey()}
+                                        isCompleted={completedTargetIds.has(item.id)}
+                                      />
+                                    </div>
                                   </li>
                                 ))}
                               </ul>
@@ -912,7 +941,7 @@ function ProjectView({
                       <div className="flex justify-end gap-2">
                         {activeUser.role === "Leader" ? (
                           <>
-                            <ProjectDialog project={project} onSubmit={onUpdateProject} />
+                            <ProjectDialog project={project} users={users} onSubmit={onUpdateProject} />
                             <Button
                               type="button"
                               variant="outline"
@@ -921,6 +950,22 @@ function ProjectView({
                               onClick={() => onCloseProject(project.id)}
                             >
                               Tutup
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => {
+                                const confirmed = window.confirm(
+                                  `Hapus proyek "${project.nama_proyek}" beserta detail tugas dan jurnal hariannya?`,
+                                );
+
+                                if (confirmed) {
+                                  onDeleteProject(project);
+                                }
+                              }}
+                            >
+                              Hapus
                             </Button>
                           </>
                         ) : (
@@ -941,9 +986,11 @@ function ProjectView({
 
 function ProjectDialog({
   project,
+  users = [],
   onSubmit,
 }: {
   project?: Project;
+  users?: User[];
   onSubmit: (project: Project) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -970,8 +1017,10 @@ function ProjectDialog({
       status,
       target_tugas: Math.max(1, targetCount || 1),
       target_detail_tugas: targetItems.map((item, index) => ({
-        id: project?.target_detail_tugas[index]?.id ?? `target-${Date.now()}-${index}`,
+        id: item.id || project?.target_detail_tugas[index]?.id || `target-${Date.now()}-${index}`,
         deskripsi: item.deskripsi,
+        assigned_user_id: item.assigned_user_id,
+        status: item.status,
         mulai: item.mulai,
         deadline: item.deadline,
         urutan: index + 1,
@@ -990,7 +1039,12 @@ function ProjectDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button type="button" variant={project ? "outline" : "default"} size={project ? "sm" : "default"} className="gap-2">
+        <Button
+          type="button"
+          variant={project ? "outline" : "default"}
+          size={project ? "sm" : "default"}
+          className={cn("gap-2", !project && "w-[calc(100vw-2rem)] max-w-full sm:w-auto")}
+        >
           {project ? <PenLine className="h-4 w-4" aria-hidden="true" /> : <Plus className="h-4 w-4" aria-hidden="true" />}
           {project ? "Edit" : "Buat Proyek Baru"}
         </Button>
@@ -1051,7 +1105,7 @@ function ProjectDialog({
               {targetRows.map((row, index) => (
                 <div
                   key={row.id}
-                  className="grid gap-3 rounded-md border bg-muted/25 p-3 lg:grid-cols-[1.4fr_0.85fr_0.85fr_auto]"
+                  className="grid gap-3 rounded-md border bg-muted/25 p-3 lg:grid-cols-[1.35fr_0.95fr_0.8fr_0.8fr_auto]"
                 >
                   <div className="grid gap-2">
                     <Label htmlFor={`target-${row.id}`}>Detail {index + 1}</Label>
@@ -1061,6 +1115,29 @@ function ProjectDialog({
                       onChange={(event) => updateTargetRow(row.id, { deskripsi: event.target.value })}
                       placeholder="Contoh: Buat wireframe dashboard"
                     />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>PIC</Label>
+                    <Select
+                      value={row.assigned_user_id || "unassigned"}
+                      onValueChange={(value) =>
+                        updateTargetRow(row.id, {
+                          assigned_user_id: value === "unassigned" ? "" : value,
+                        })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Pilih PIC" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="unassigned">Belum ditugaskan</SelectItem>
+                        {users.map((user) => (
+                          <SelectItem key={user.id} value={user.id}>
+                            {user.nama}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="grid gap-2">
                     <Label htmlFor={`target-start-${row.id}`}>Mulai</Label>
@@ -1127,47 +1204,61 @@ function JournalView({
   projects,
   tasks,
   users,
-  onCreateTask,
+  onUpdateTaskStatus,
 }: {
   activeUser: User;
   projects: ProjectWithProgress[];
   tasks: Task[];
   users: User[];
-  onCreateTask: (task: Task) => void;
+  onUpdateTaskStatus: (
+    projectId: string,
+    targetTaskId: string,
+    status: TargetTaskStatus,
+  ) => void;
 }) {
-  const selectableProjects = projects.filter((project) => project.status !== "Selesai");
+  const selectableProjects = projects.filter(
+    (project) =>
+      project.status !== "Selesai" &&
+      (activeUser.role === "Leader" || getVisibleTargetDetails(project, activeUser).length > 0),
+  );
   const [selectedProject, setSelectedProject] = useState(selectableProjects[0]?.id ?? "");
+  useEffect(() => {
+    if (!selectableProjects.some((project) => project.id === selectedProject)) {
+      setSelectedProject(selectableProjects[0]?.id ?? "");
+    }
+  }, [selectableProjects, selectedProject]);
   const selectedProjectData = selectableProjects.find((project) => project.id === selectedProject);
   const completedTargetIds = new Set(
     tasks
       .filter((task) => task.project_id === selectedProject && task.target_task_id)
       .map((task) => task.target_task_id),
   );
+  const visibleTargetDetails = selectedProjectData
+    ? getVisibleTargetDetails(selectedProjectData, activeUser)
+    : [];
   const completedTargets = selectedProjectData
-    ? selectedProjectData.target_detail_tugas.filter((target) => completedTargetIds.has(target.id))
+    ? visibleTargetDetails.filter(
+        (target) => completedTargetIds.has(target.id) || target.status === "Selesai",
+      )
         .length
     : 0;
 
-  const handleTargetCheck = (target: Project["target_detail_tugas"][number]) => {
-    if (!selectedProjectData || completedTargetIds.has(target.id)) {
+  const handleTargetStatusChange = (
+    target: Project["target_detail_tugas"][number],
+    status: TargetTaskStatus,
+  ) => {
+    if (!selectedProjectData) {
       return;
     }
 
-    onCreateTask({
-      id: `t-${Date.now()}`,
-      project_id: selectedProjectData.id,
-      target_task_id: target.id,
-      user_id: activeUser.id,
-      deskripsi: target.deskripsi,
-      tanggal: getLocalDateKey(),
-    });
+    onUpdateTaskStatus(selectedProjectData.id, target.id, status);
   };
 
   return (
     <div className="grid gap-6">
       <PageHeader
         title="Jurnal Tugas Harian"
-        description="Centang detail target yang sudah selesai dikerjakan hari ini."
+        description="Ubah status detail target sesuai progres pekerjaan harian."
       />
 
       <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
@@ -1175,7 +1266,7 @@ function JournalView({
           <CardHeader>
             <CardTitle>Checklist Detail Tugas</CardTitle>
             <CardDescription>
-              Pilih proyek, lalu centang target yang sudah selesai. Catatan harian akan tersimpan otomatis.
+              Pilih proyek, lalu ubah status target. Perubahan akan tersimpan otomatis.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -1200,54 +1291,72 @@ function JournalView({
                 <div className="grid gap-3">
                   <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/45 px-3 py-2 text-sm">
                     <span className="font-medium">
-                      {completedTargets} / {getProjectTargetCount(selectedProjectData)} selesai
+                      {completedTargets} / {visibleTargetDetails.length || getProjectTargetCount(selectedProjectData)} selesai
                     </span>
                     <span className="text-muted-foreground">
-                      {Math.round((completedTargets / getProjectTargetCount(selectedProjectData)) * 100)}%
+                      {Math.round((completedTargets / (visibleTargetDetails.length || getProjectTargetCount(selectedProjectData))) * 100)}%
                     </span>
                   </div>
-                  {selectedProjectData.target_detail_tugas.length > 0 ? (
+                  {visibleTargetDetails.length > 0 ? (
                     <div className="grid gap-2">
-                      {selectedProjectData.target_detail_tugas.map((target) => {
-                        const isCompleted = completedTargetIds.has(target.id);
+                      {visibleTargetDetails.map((target) => {
+                        const isCompleted = completedTargetIds.has(target.id) || target.status === "Selesai";
+                        const currentStatus = getEffectiveTargetStatus(target, completedTargetIds);
 
                         return (
-                          <label
+                          <div
                             key={target.id}
                             className={cn(
-                              "flex cursor-pointer items-start gap-3 rounded-md border p-3 text-sm transition-colors",
+                              "grid gap-3 rounded-md border p-3 text-sm transition-colors sm:grid-cols-[1fr_12rem]",
                               isCompleted ? "bg-emerald-50 text-emerald-800" : "bg-card hover:bg-muted/45",
                             )}
                           >
-                            <input
-                              type="checkbox"
-                              className="mt-0.5 h-4 w-4 rounded border-input accent-primary"
-                              checked={isCompleted}
-                              disabled={isCompleted}
-                              onChange={() => handleTargetCheck(target)}
-                            />
                             <span className={cn(isCompleted && "line-through")}>
-                              <span className="block">{target.deskripsi}</span>
+                              <span className="flex flex-wrap items-center gap-2">
+                                <span>{target.deskripsi}</span>
+                                <TargetStatusBadge
+                                  target={target}
+                                  today={getLocalDateKey()}
+                                  isCompleted={isCompleted}
+                                />
+                              </span>
                               <span className="mt-1 block text-xs text-muted-foreground">
+                                PIC: {getAssignedUserName(target.assigned_user_id, users)} -{" "}
                                 {formatTargetSchedule(target)}
                                 {getTaskPlannedDuration(target)
                                   ? ` - rencana ${getTaskPlannedDuration(target)} hari`
                                   : ""}
                               </span>
                             </span>
-                          </label>
+                            <Select
+                              value={currentStatus}
+                              onValueChange={(value) =>
+                                handleTargetStatusChange(target, value as TargetTaskStatus)
+                              }
+                            >
+                              <SelectTrigger className="bg-background">
+                                <SelectValue placeholder="Pilih status" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Belum Mulai">Belum mulai</SelectItem>
+                                <SelectItem value="Dikerjakan">Dikerjakan</SelectItem>
+                                <SelectItem value="Koreksi">Koreksi</SelectItem>
+                                <SelectItem value="Selesai">Selesai</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
                         );
                       })}
                     </div>
                   ) : (
                     <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      Project ini belum punya detail target tugas. Leader bisa menambahkannya dari menu Proyek.
+                      Tidak ada detail tugas yang ditugaskan ke akun ini.
                     </div>
                   )}
                 </div>
               ) : (
                 <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-                  Belum ada proyek aktif.
+                  Belum ada proyek aktif yang ditugaskan ke akun ini.
                 </div>
               )}
             </div>
@@ -1476,6 +1585,63 @@ function DeadlineBadge({ project, today }: { project: Project; today: string }) 
   return <Badge variant="success">Aman {daysLeft} hari</Badge>;
 }
 
+function TargetStatusBadge({
+  target,
+  today,
+  isCompleted = false,
+}: {
+  target: Project["target_detail_tugas"][number];
+  today: string;
+  isCompleted?: boolean;
+}) {
+  if (isCompleted || target.status === "Selesai") {
+    return <Badge variant="success">Selesai</Badge>;
+  }
+
+  if (target.deadline && target.deadline < today) {
+    return (
+      <Badge variant="warning" className="bg-red-100 text-red-700">
+        Overdue
+      </Badge>
+    );
+  }
+
+  if (target.status === "Dikerjakan") {
+    return <Badge variant="default">Dikerjakan</Badge>;
+  }
+
+  if (target.status === "Koreksi") {
+    return <Badge variant="warning">Koreksi</Badge>;
+  }
+
+  return <Badge variant="outline">Belum Mulai</Badge>;
+}
+
+function getEffectiveTargetStatus(
+  target: Project["target_detail_tugas"][number],
+  completedTargetIds: Set<string | null>,
+): TargetTaskStatus {
+  if (completedTargetIds.has(target.id)) {
+    return "Selesai";
+  }
+
+  return target.status;
+}
+
+function getAssignedUserName(userId: string | null, users: User[]) {
+  return users.find((user) => user.id === userId)?.nama ?? "Belum ditugaskan";
+}
+
+function getVisibleTargetDetails(project: Project, activeUser: User) {
+  if (activeUser.role === "Leader") {
+    return project.target_detail_tugas;
+  }
+
+  return project.target_detail_tugas.filter(
+    (target) => !target.assigned_user_id || target.assigned_user_id === activeUser.id,
+  );
+}
+
 function ActivityItem({
   task,
   projects,
@@ -1506,21 +1672,34 @@ function ActivityItem({
 }
 
 function getMemberPerformance(users: User[], projects: Project[], tasks: Task[]) {
-  const projectStatusById = new Map(projects.map((project) => [project.id, project.status]));
+  const completionByTargetId = new Map(
+    tasks
+      .filter((task) => task.target_task_id)
+      .map((task) => [task.target_task_id as string, task]),
+  );
 
   return users.map((user) => {
-    const userTasks = tasks.filter((task) => task.user_id === user.id);
-    const completed = userTasks.filter(
-      (task) => projectStatusById.get(task.project_id) === "Selesai",
+    const userTargetTasks = projects.flatMap((project) =>
+      project.target_detail_tugas.filter((target) => {
+        const completedTask = completionByTargetId.get(target.id);
+        const ownerId = target.assigned_user_id ?? completedTask?.user_id;
+
+        return ownerId === user.id;
+      }),
+    );
+    const completed = userTargetTasks.filter(
+      (target) => target.status === "Selesai" || completionByTargetId.has(target.id),
     ).length;
-    const inProgress = userTasks.length - completed;
+    const inProgress = userTargetTasks.length - completed;
 
     return {
       ...user,
       completed,
       inProgress,
-      total: userTasks.length,
-      completionRate: userTasks.length ? Math.round((completed / userTasks.length) * 100) : 0,
+      total: userTargetTasks.length,
+      completionRate: userTargetTasks.length
+        ? Math.round((completed / userTargetTasks.length) * 100)
+        : 0,
     };
   }).filter((member) => member.total > 0);
 }
@@ -1547,6 +1726,8 @@ function createEmptyTargetDraft(): TargetDraft {
   return {
     id: `draft-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     deskripsi: "",
+    assigned_user_id: "",
+    status: "Belum Mulai",
     mulai: "",
     deadline: "",
   };
@@ -1560,6 +1741,8 @@ function getInitialTargetRows(project?: Project): TargetDraft[] {
   return project.target_detail_tugas.map((target) => ({
     id: target.id,
     deskripsi: target.deskripsi,
+    assigned_user_id: target.assigned_user_id ?? "",
+    status: target.status,
     mulai: target.mulai ?? "",
     deadline: target.deadline ?? "",
   }));
@@ -1578,7 +1761,10 @@ function normalizeTargetRows(rows: TargetDraft[]) {
     seen.add(deskripsi);
     return [
       {
+        id: row.id,
         deskripsi,
+        assigned_user_id: row.assigned_user_id || null,
+        status: row.status,
         mulai: row.mulai || null,
         deadline: row.deadline || null,
       },
@@ -1640,7 +1826,10 @@ async function createProject(
         status: project.status,
         target_tugas: project.target_tugas,
         target_detail_tugas: project.target_detail_tugas.map((item) => ({
+          id: item.id,
           deskripsi: item.deskripsi,
+          assigned_user_id: item.assigned_user_id,
+          status: item.status,
           mulai: item.mulai,
           deadline: item.deadline,
         })),
@@ -1667,7 +1856,10 @@ async function updateProject(
         status: project.status,
         target_tugas: project.target_tugas,
         target_detail_tugas: project.target_detail_tugas.map((item) => ({
+          id: item.id,
           deskripsi: item.deskripsi,
+          assigned_user_id: item.assigned_user_id,
+          status: item.status,
           mulai: item.mulai,
           deadline: item.deadline,
         })),
@@ -1700,6 +1892,22 @@ async function closeProject(
   }
 }
 
+async function deleteProject(
+  project: Project,
+  refresh: () => Promise<unknown>,
+  showToast: (message: string) => void,
+) {
+  try {
+    await fetchJson<{ id: string }>(`/api/projects/${project.id}`, {
+      method: "DELETE",
+    });
+    await refresh();
+    showToast(`Proyek "${project.nama_proyek}" berhasil dihapus.`);
+  } catch (error) {
+    showToast(getErrorMessage(error));
+  }
+}
+
 async function createTask(
   task: Task,
   refresh: () => Promise<unknown>,
@@ -1718,6 +1926,53 @@ async function createTask(
     });
     await refresh();
     showToast("Tugas harian berhasil disimpan.");
+  } catch (error) {
+    showToast(getErrorMessage(error));
+  }
+}
+
+async function deleteTask(
+  projectId: string,
+  targetTaskId: string,
+  userId: string,
+  refresh: () => Promise<unknown>,
+  showToast: (message: string) => void,
+) {
+  try {
+    await fetchJson<{ target_task_id: string }>("/api/tasks", {
+      method: "DELETE",
+      body: JSON.stringify({
+        project_id: projectId,
+        target_task_id: targetTaskId,
+        user_id: userId,
+      }),
+    });
+    await refresh();
+    showToast("Checklist tugas berhasil dibatalkan.");
+  } catch (error) {
+    showToast(getErrorMessage(error));
+  }
+}
+
+async function updateTaskStatus(
+  projectId: string,
+  targetTaskId: string,
+  status: TargetTaskStatus,
+  refresh: () => Promise<unknown>,
+  showToast: (message: string) => void,
+) {
+  try {
+    await fetchJson<Task | null>("/api/tasks", {
+      method: "PATCH",
+      body: JSON.stringify({
+        project_id: projectId,
+        target_task_id: targetTaskId,
+        status,
+        tanggal: getLocalDateKey(),
+      }),
+    });
+    await refresh();
+    showToast(`Status tugas diubah menjadi ${status}.`);
   } catch (error) {
     showToast(getErrorMessage(error));
   }

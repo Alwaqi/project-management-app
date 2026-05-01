@@ -19,6 +19,8 @@ export function toProjectDto(project: ProjectRow, targetTasks: ProjectTargetTask
       .map((targetTask) => ({
         id: targetTask.id,
         deskripsi: targetTask.deskripsi,
+        assigned_user_id: targetTask.assignedUserId,
+        status: targetTask.status,
         mulai: targetTask.mulai,
         deadline: targetTask.deadline,
         urutan: targetTask.urutan,
@@ -58,15 +60,26 @@ export function toProjectWithProgress(project: Project, tasks: Task[]) {
 }
 
 export function getMemberPerformance(users: User[], projects: Project[], tasks: Task[]) {
-  const projectStatusById = new Map(projects.map((project) => [project.id, project.status]));
+  const completionByTargetId = new Map(
+    tasks
+      .filter((task) => task.target_task_id)
+      .map((task) => [task.target_task_id as string, task]),
+  );
 
   return users
     .map((user) => {
-      const userTasks = tasks.filter((task) => task.user_id === user.id);
-      const completed = userTasks.filter(
-        (task) => projectStatusById.get(task.project_id) === "Selesai",
+      const userTargetTasks = projects.flatMap((project) =>
+        project.target_detail_tugas.filter((target) => {
+          const completedTask = completionByTargetId.get(target.id);
+          const ownerId = target.assigned_user_id ?? completedTask?.user_id;
+
+          return ownerId === user.id;
+        }),
+      );
+      const completed = userTargetTasks.filter(
+        (target) => target.status === "Selesai" || completionByTargetId.has(target.id),
       ).length;
-      const inProgress = userTasks.length - completed;
+      const inProgress = userTargetTasks.length - completed;
 
       return {
         id: user.id,
@@ -75,8 +88,10 @@ export function getMemberPerformance(users: User[], projects: Project[], tasks: 
         role: user.role,
         dikerjakan: inProgress,
         selesai: completed,
-        total: userTasks.length,
-        rasio_selesai: userTasks.length ? Math.round((completed / userTasks.length) * 100) : 0,
+        total: userTargetTasks.length,
+        rasio_selesai: userTargetTasks.length
+          ? Math.round((completed / userTargetTasks.length) * 100)
+          : 0,
       };
     })
     .filter((member) => member.total > 0);

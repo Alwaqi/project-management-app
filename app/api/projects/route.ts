@@ -4,6 +4,12 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { project, projectTargetTask, task } from "@/lib/db/schema";
 import {
+  canAccessAssignedTarget,
+  forbiddenResponse,
+  getRequestUser,
+  unauthorizedResponse,
+} from "@/lib/api/authz";
+import {
   groupTargetTasksByProject,
   toProjectDto,
   toProjectWithProgress,
@@ -14,21 +20,42 @@ import { projectCreateSchema } from "@/lib/api/validation";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request: Request) {
   const unavailable = databaseUnavailableResponse();
   if (unavailable) return unavailable;
 
   try {
+    const currentUser = await getRequestUser(request);
+    if (!currentUser) return unauthorizedResponse();
+
     const [projectRows, targetTaskRows, taskRows] = await Promise.all([
       db.select().from(project).orderBy(desc(project.createdAt)),
       db.select().from(projectTargetTask).orderBy(asc(projectTargetTask.urutan)),
       db.select().from(task),
     ]);
     const tasks = taskRows.map(toTaskDto);
+    const visibleTargetTaskRows =
+      currentUser.role === "Leader"
+        ? targetTaskRows
+        : targetTaskRows.filter((targetTask) =>
+            canAccessAssignedTarget(targetTask.assignedUserId, currentUser),
+          );
     const targetTasksByProject = groupTargetTasksByProject(targetTaskRows);
-    const projects = projectRows.map((item) =>
-      toProjectDto(item, targetTasksByProject.get(item.id) ?? []),
-    );
+    const visibleTargetTasksByProject = groupTargetTasksByProject(visibleTargetTaskRows);
+    const projects = projectRows
+      .filter(
+        (item) =>
+          currentUser.role === "Leader" ||
+          (visibleTargetTasksByProject.get(item.id)?.length ?? 0) > 0,
+      )
+      .map((item) =>
+        toProjectDto(
+          item,
+          currentUser.role === "Leader"
+            ? targetTasksByProject.get(item.id) ?? []
+            : visibleTargetTasksByProject.get(item.id) ?? [],
+        ),
+      );
 
     return NextResponse.json({
       data: projects.map((item) => toProjectWithProgress(item, tasks)),
@@ -43,6 +70,10 @@ export async function POST(request: Request) {
   if (unavailable) return unavailable;
 
   try {
+    const currentUser = await getRequestUser(request);
+    if (!currentUser) return unauthorizedResponse();
+    if (currentUser.role !== "Leader") return forbiddenResponse("Hanya Leader yang bisa membuat proyek");
+
     const payload = projectCreateSchema.parse(await request.json());
     const targetItems = normalizeTargetDetails(payload.target_detail_tugas);
     const projectDeadline = getProjectDeadline(targetItems) ?? payload.deadline ?? null;
@@ -61,6 +92,8 @@ export async function POST(request: Request) {
             id: crypto.randomUUID(),
             projectId: newProject.id,
             deskripsi: item.deskripsi,
+            assignedUserId: item.assignedUserId,
+            status: item.status,
             mulai: item.mulai,
             deadline: item.deadline,
             urutan: index + 1,
@@ -79,6 +112,8 @@ export async function POST(request: Request) {
             id: "",
             projectId: createdProject.id,
             deskripsi: item.deskripsi,
+            assignedUserId: item.assignedUserId,
+            status: item.status,
             mulai: item.mulai,
             deadline: item.deadline,
             urutan: index + 1,
@@ -95,18 +130,31 @@ export async function POST(request: Request) {
 }
 
 function normalizeTargetDetails(details?: Array<string | {
+  id?: string;
   deskripsi: string;
   mulai?: string | null;
   deadline?: string | null;
+  assigned_user_id?: string | null;
+  status?: "Belum Mulai" | "Dikerjakan" | "Koreksi" | "Selesai";
 }>) {
   const seen = new Set<string>();
 
   return (details ?? []).flatMap((item) => {
     const detail =
       typeof item === "string"
-        ? { deskripsi: item.trim(), mulai: null, deadline: null }
+        ? {
+            id: undefined,
+            deskripsi: item.trim(),
+            assignedUserId: null,
+            status: "Belum Mulai" as const,
+            mulai: null,
+            deadline: null,
+          }
         : {
+            id: item.id,
             deskripsi: item.deskripsi.trim(),
+            assignedUserId: item.assigned_user_id || null,
+            status: item.status ?? "Belum Mulai",
             mulai: item.mulai || null,
             deadline: item.deadline || null,
           };

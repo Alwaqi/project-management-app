@@ -12,6 +12,12 @@ import {
 
 export const userRoleEnum = pgEnum("user_role", ["Leader", "Tim"]);
 export const projectStatusEnum = pgEnum("project_status", ["Menunggu", "Berjalan", "Selesai"]);
+export const targetTaskStatusEnum = pgEnum("target_task_status", [
+  "Belum Mulai",
+  "Dikerjakan",
+  "Koreksi",
+  "Selesai",
+]);
 
 export const user = pgTable(
   "user",
@@ -91,7 +97,11 @@ export const projectTargetTask = pgTable("project_target_task", {
   projectId: text("project_id")
     .notNull()
     .references(() => project.id, { onDelete: "cascade" }),
+  assignedUserId: text("assigned_user_id").references(() => user.id, {
+    onDelete: "set null",
+  }),
   deskripsi: text("deskripsi").notNull(),
+  status: targetTaskStatusEnum("status").notNull().default("Belum Mulai"),
   mulai: date("mulai", { mode: "string" }),
   deadline: date("deadline", { mode: "string" }),
   urutan: integer("urutan").notNull().default(1),
@@ -120,6 +130,7 @@ export const userRelations = relations(user, ({ many }) => ({
   sessions: many(session),
   accounts: many(account),
   tasks: many(task),
+  assignedTargetTasks: many(projectTargetTask),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({
@@ -145,6 +156,10 @@ export const projectTargetTaskRelations = relations(projectTargetTask, ({ one })
   project: one(project, {
     fields: [projectTargetTask.projectId],
     references: [project.id],
+  }),
+  assignedUser: one(user, {
+    fields: [projectTargetTask.assignedUserId],
+    references: [user.id],
   }),
 }));
 
@@ -181,6 +196,7 @@ export const schema = {
 
 export type UserRole = (typeof userRoleEnum.enumValues)[number];
 export type ProjectStatus = (typeof projectStatusEnum.enumValues)[number];
+export type TargetTaskStatus = (typeof targetTaskStatusEnum.enumValues)[number];
 export type ProjectRow = typeof project.$inferSelect;
 export type NewProject = typeof project.$inferInsert;
 export type ProjectTargetTaskRow = typeof projectTargetTask.$inferSelect;
