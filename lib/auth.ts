@@ -87,7 +87,7 @@ export const auth = betterAuth({
         input: true,
       },
       teamType: {
-        type: ["Tim Sales", "Tim SE", "Tim Admin"],
+        type: ["Tim Sales", "Tim SE", "Tim Admin", "Tim Marketing dan Konten"],
         required: false,
         defaultValue: "Tim Sales",
         input: true,

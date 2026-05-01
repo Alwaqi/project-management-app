@@ -11,7 +11,12 @@ import {
 } from "drizzle-orm/pg-core";
 
 export const userRoleEnum = pgEnum("user_role", ["Leader", "Tim"]);
-export const teamTypeEnum = pgEnum("team_type", ["Tim Sales", "Tim SE", "Tim Admin"]);
+export const teamTypeEnum = pgEnum("team_type", [
+  "Tim Sales",
+  "Tim SE",
+  "Tim Admin",
+  "Tim Marketing dan Konten",
+]);
 export const projectStatusEnum = pgEnum("project_status", ["Menunggu", "Berjalan", "Selesai"]);
 export const targetTaskStatusEnum = pgEnum("target_task_status", [
   "Belum Mulai",
