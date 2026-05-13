@@ -2,59 +2,60 @@ import { relations } from "drizzle-orm";
 import {
   boolean,
   date,
-  integer,
-  pgEnum,
-  pgTable,
+  int,
+  mysqlTable,
+  varchar,
   text,
   timestamp,
+  mysqlEnum,
   uniqueIndex,
-} from "drizzle-orm/pg-core";
+} from "drizzle-orm/mysql-core";
 
-export const userRoleEnum = pgEnum("user_role", ["Leader", "Tim"]);
-export const teamTypeEnum = pgEnum("team_type", [
+const roleValues = ["Leader", "Tim"] as const;
+const teamTypeValues = [
   "Tim Sales",
   "Tim SE",
   "Tim Admin",
   "Tim Marketing dan Konten",
   "Tim Edukasi",
-]);
-export const projectStatusEnum = pgEnum("project_status", ["Menunggu", "Berjalan", "Selesai"]);
-export const targetTaskStatusEnum = pgEnum("target_task_status", [
+] as const;
+const projectStatusValues = ["Menunggu", "Berjalan", "Selesai"] as const;
+const targetTaskStatusValues = [
   "Belum Mulai",
   "Dikerjakan",
   "Koreksi",
   "Selesai",
-]);
+] as const;
 
-export const user = pgTable(
+export const user = mysqlTable(
   "user",
   {
-    id: text("id").primaryKey(),
-    name: text("name").notNull(),
-    email: text("email").notNull(),
+    id: varchar("id", { length: 255 }).primaryKey(),
+    name: varchar("name", { length: 255 }).notNull(),
+    email: varchar("email", { length: 255 }).notNull(),
     emailVerified: boolean("email_verified").notNull().default(false),
-    image: text("image"),
-    role: userRoleEnum("role").notNull().default("Tim"),
-    teamType: teamTypeEnum("team_type").notNull().default("Tim Sales"),
+    image: varchar("image", { length: 255 }),
+    role: mysqlEnum("role", roleValues).notNull().default("Tim"),
+    teamType: mysqlEnum("team_type", teamTypeValues).notNull().default("Tim Sales"),
     createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow().onUpdateNow(),
   },
   (table) => ({
     emailIdx: uniqueIndex("user_email_idx").on(table.email),
   }),
 );
 
-export const session = pgTable(
+export const session = mysqlTable(
   "session",
   {
-    id: text("id").primaryKey(),
+    id: varchar("id", { length: 255 }).primaryKey(),
     expiresAt: timestamp("expires_at", { mode: "date" }).notNull(),
-    token: text("token").notNull(),
+    token: varchar("token", { length: 255 }).notNull(),
     createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
-    ipAddress: text("ip_address"),
+    updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow().onUpdateNow(),
+    ipAddress: varchar("ip_address", { length: 255 }),
     userAgent: text("user_agent"),
-    userId: text("user_id")
+    userId: varchar("user_id", { length: 255 })
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
   },
@@ -63,11 +64,11 @@ export const session = pgTable(
   }),
 );
 
-export const account = pgTable("account", {
-  id: text("id").primaryKey(),
-  accountId: text("account_id").notNull(),
-  providerId: text("provider_id").notNull(),
-  userId: text("user_id")
+export const account = mysqlTable("account", {
+  id: varchar("id", { length: 255 }).primaryKey(),
+  accountId: varchar("account_id", { length: 255 }).notNull(),
+  providerId: varchar("provider_id", { length: 255 }).notNull(),
+  userId: varchar("user_id", { length: 255 })
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),
   accessToken: text("access_token"),
@@ -75,63 +76,63 @@ export const account = pgTable("account", {
   idToken: text("id_token"),
   accessTokenExpiresAt: timestamp("access_token_expires_at", { mode: "date" }),
   refreshTokenExpiresAt: timestamp("refresh_token_expires_at", { mode: "date" }),
-  scope: text("scope"),
+  scope: varchar("scope", { length: 255 }),
   password: text("password"),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow().onUpdateNow(),
 });
 
-export const verification = pgTable("verification", {
-  id: text("id").primaryKey(),
-  identifier: text("identifier").notNull(),
-  value: text("value").notNull(),
+export const verification = mysqlTable("verification", {
+  id: varchar("id", { length: 255 }).primaryKey(),
+  identifier: varchar("identifier", { length: 255 }).notNull(),
+  value: varchar("value", { length: 255 }).notNull(),
   expiresAt: timestamp("expires_at", { mode: "date" }).notNull(),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow().onUpdateNow(),
 });
 
-export const project = pgTable("project", {
-  id: text("id").primaryKey(),
-  namaProyek: text("nama_proyek").notNull(),
-  status: projectStatusEnum("status").notNull().default("Berjalan"),
-  targetTugas: integer("target_tugas").notNull().default(8),
+export const project = mysqlTable("project", {
+  id: varchar("id", { length: 255 }).primaryKey(),
+  namaProyek: varchar("nama_proyek", { length: 255 }).notNull(),
+  status: mysqlEnum("status", projectStatusValues).notNull().default("Berjalan"),
+  targetTugas: int("target_tugas").notNull().default(8),
   deadline: date("deadline", { mode: "string" }),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow().onUpdateNow(),
 });
 
-export const projectTargetTask = pgTable("project_target_task", {
-  id: text("id").primaryKey(),
-  projectId: text("project_id")
+export const projectTargetTask = mysqlTable("project_target_task", {
+  id: varchar("id", { length: 255 }).primaryKey(),
+  projectId: varchar("project_id", { length: 255 })
     .notNull()
     .references(() => project.id, { onDelete: "cascade" }),
-  assignedUserId: text("assigned_user_id").references(() => user.id, {
+  assignedUserId: varchar("assigned_user_id", { length: 255 }).references(() => user.id, {
     onDelete: "set null",
   }),
   deskripsi: text("deskripsi").notNull(),
-  status: targetTaskStatusEnum("status").notNull().default("Belum Mulai"),
+  status: mysqlEnum("status", targetTaskStatusValues).notNull().default("Belum Mulai"),
   mulai: date("mulai", { mode: "string" }),
   deadline: date("deadline", { mode: "string" }),
-  urutan: integer("urutan").notNull().default(1),
+  urutan: int("urutan").notNull().default(1),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow().onUpdateNow(),
 });
 
-export const task = pgTable("task", {
-  id: text("id").primaryKey(),
-  projectId: text("project_id")
+export const task = mysqlTable("task", {
+  id: varchar("id", { length: 255 }).primaryKey(),
+  projectId: varchar("project_id", { length: 255 })
     .notNull()
     .references(() => project.id, { onDelete: "cascade" }),
-  targetTaskId: text("target_task_id").references(() => projectTargetTask.id, {
+  targetTaskId: varchar("target_task_id", { length: 255 }).references(() => projectTargetTask.id, {
     onDelete: "set null",
   }),
-  userId: text("user_id")
+  userId: varchar("user_id", { length: 255 })
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),
   deskripsi: text("deskripsi").notNull(),
   tanggal: date("tanggal", { mode: "string" }).notNull(),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow().onUpdateNow(),
 });
 
 export const userRelations = relations(user, ({ many }) => ({
@@ -202,10 +203,10 @@ export const schema = {
   taskRelations,
 };
 
-export type UserRole = (typeof userRoleEnum.enumValues)[number];
-export type TeamType = (typeof teamTypeEnum.enumValues)[number];
-export type ProjectStatus = (typeof projectStatusEnum.enumValues)[number];
-export type TargetTaskStatus = (typeof targetTaskStatusEnum.enumValues)[number];
+export type UserRole = (typeof roleValues)[number];
+export type TeamType = (typeof teamTypeValues)[number];
+export type ProjectStatus = (typeof projectStatusValues)[number];
+export type TargetTaskStatus = (typeof targetTaskStatusValues)[number];
 export type ProjectRow = typeof project.$inferSelect;
 export type NewProject = typeof project.$inferInsert;
 export type ProjectTargetTaskRow = typeof projectTargetTask.$inferSelect;

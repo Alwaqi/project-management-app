@@ -1,1 +1,0 @@
-ALTER TYPE "public"."target_task_status" ADD VALUE 'Koreksi' BEFORE 'Selesai';

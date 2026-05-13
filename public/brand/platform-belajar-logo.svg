@@ -1,0 +1,24 @@
+<svg width="1080" height="320" viewBox="0 0 1080 320" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Platform Belajar logo</title>
+  <desc id="desc">Original modern logo for Platform Belajar with an abstract book and platform mark.</desc>
+  <rect width="1080" height="320" fill="white"/>
+  <g transform="translate(64 40)">
+    <rect width="240" height="240" rx="56" fill="#122131"/>
+    <g transform="scale(.46875)">
+      <rect x="116" y="392" width="280" height="28" rx="14" fill="#F4B84A"/>
+      <path d="M132 178C132 162.536 144.536 150 160 150H236C247.046 150 256 158.954 256 170V372H170C149.013 372 132 354.987 132 334V178Z" fill="#20C7B5"/>
+      <path d="M256 170C256 158.954 264.954 150 276 150H352C367.464 150 380 162.536 380 178V334C380 354.987 362.987 372 342 372H256V170Z" fill="#F4B84A"/>
+      <path d="M164 196C164 184.954 172.954 176 184 176H230C244.359 176 256 187.641 256 202V354H190C175.641 354 164 342.359 164 328V196Z" fill="white"/>
+      <path d="M256 202C256 187.641 267.641 176 282 176H328C339.046 176 348 184.954 348 196V328C348 342.359 336.359 354 322 354H256V202Z" fill="white"/>
+      <path d="M256 196V357" stroke="#122131" stroke-width="12" stroke-linecap="round" stroke-opacity=".16"/>
+      <circle cx="256" cy="109" r="24" fill="#20C7B5"/>
+      <path d="M256 62V38M306 82L323 65M206 82L189 65" stroke="#F4B84A" stroke-width="16" stroke-linecap="round"/>
+    </g>
+  </g>
+  <g transform="translate(356 93)">
+    <text x="0" y="74" fill="#122131" font-family="Inter, Manrope, Poppins, Arial, sans-serif" font-size="72" font-weight="800" letter-spacing="0">Platform</text>
+    <text x="0" y="146" fill="#20C7B5" font-family="Inter, Manrope, Poppins, Arial, sans-serif" font-size="72" font-weight="800" letter-spacing="0">Belajar</text>
+    <path d="M6 170H390" stroke="#F4B84A" stroke-width="10" stroke-linecap="round"/>
+    <text x="0" y="216" fill="#52606D" font-family="Inter, Manrope, Poppins, Arial, sans-serif" font-size="24" font-weight="600" letter-spacing=".8">ACCESSIBLE | TRANSPARENT | IMPACTFUL</text>
+  </g>
+</svg>

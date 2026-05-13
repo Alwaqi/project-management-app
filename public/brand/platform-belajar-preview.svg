@@ -1,0 +1,14 @@
+<svg width="1440" height="1024" viewBox="0 0 1440 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1440" height="1024" fill="#F6F8FA"/>
+    <text x="96" y="96" fill="#122131" font-family="Inter, Arial, sans-serif" font-size="42" font-weight="800">Platform Belajar Logo Preview</text>
+    <text x="96" y="137" fill="#52606D" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="600">Refined mark: clearer open book, stronger platform base, fewer details.</text>
+    <rect x="96" y="190" width="1248" height="272" rx="28" fill="white"/>
+    <image href="platform-belajar-logo.svg" x="168" y="166" width="1080" height="320"/>
+    <rect x="96" y="510" width="604" height="352" rx="28" fill="#122131"/>
+    <image href="platform-belajar-logo-dark.svg" x="138" y="526" width="540" height="160"/>
+    <text x="138" y="802" fill="#C9D3DC" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="700">Dark / pitch deck usage</text>
+    <rect x="740" y="510" width="604" height="352" rx="28" fill="white"/>
+    <image href="platform-belajar-mark.svg" x="914" y="554" width="256" height="256"/>
+    <image href="platform-belajar-mark.svg" x="1200" y="632" width="80" height="80"/>
+    <text x="914" y="842" fill="#52606D" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="700">App icon / social avatar</text>
+  </svg>

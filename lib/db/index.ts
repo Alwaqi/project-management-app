@@ -1,29 +1,29 @@
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
+import { drizzle } from "drizzle-orm/mysql2";
+import mysql from "mysql2/promise";
 
 import { schema } from "@/lib/db/schema";
 
 const databaseUrl =
-  process.env.DATABASE_URL ?? "postgresql://postgres:postgres@localhost:5432/project_management";
+  process.env.DATABASE_URL ?? "mysql://user:password@localhost:3306/project_management";
 
 const globalForDb = globalThis as unknown as {
-  pgClient?: postgres.Sql;
+  mysqlClient?: mysql.Pool;
 };
 
 export const queryClient =
-  globalForDb.pgClient ??
-  postgres(databaseUrl, {
-    max: 1,
-    prepare: false,
+  globalForDb.mysqlClient ??
+  mysql.createPool({
+    uri: databaseUrl,
   });
 
 if (process.env.NODE_ENV !== "production") {
-  globalForDb.pgClient = queryClient;
+  globalForDb.mysqlClient = queryClient;
 }
 
 export const db = drizzle({
   client: queryClient,
   schema,
+  mode: "default",
 });
 
 export function isDatabaseConfigured() {
