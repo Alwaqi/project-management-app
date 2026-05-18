@@ -37,7 +37,7 @@ export const auth = betterAuth({
     readEnv("BETTER_AUTH_SECRET") ??
     "protrack-sdk-local-auth-secret-please-set-env-before-real-deploy",
   database: drizzleAdapter(db, {
-    provider: "mysql",
+    provider: "pg",
     schema,
   }),
   emailAndPassword: {

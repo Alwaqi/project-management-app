@@ -2,14 +2,14 @@ import { relations } from "drizzle-orm";
 import {
   boolean,
   date,
-  int,
-  mysqlTable,
-  varchar,
+  integer,
+  pgEnum,
+  pgTable,
   text,
   timestamp,
-  mysqlEnum,
   uniqueIndex,
-} from "drizzle-orm/mysql-core";
+  varchar,
+} from "drizzle-orm/pg-core";
 
 const roleValues = ["Leader", "Tim"] as const;
 const teamTypeValues = [
@@ -27,7 +27,12 @@ const targetTaskStatusValues = [
   "Selesai",
 ] as const;
 
-export const user = mysqlTable(
+export const roleEnum = pgEnum("role", roleValues);
+export const teamTypeEnum = pgEnum("team_type", teamTypeValues);
+export const projectStatusEnum = pgEnum("project_status", projectStatusValues);
+export const targetTaskStatusEnum = pgEnum("target_task_status", targetTaskStatusValues);
+
+export const user = pgTable(
   "user",
   {
     id: varchar("id", { length: 255 }).primaryKey(),
@@ -35,24 +40,24 @@ export const user = mysqlTable(
     email: varchar("email", { length: 255 }).notNull(),
     emailVerified: boolean("email_verified").notNull().default(false),
     image: varchar("image", { length: 255 }),
-    role: mysqlEnum("role", roleValues).notNull().default("Tim"),
-    teamType: mysqlEnum("team_type", teamTypeValues).notNull().default("Tim Sales"),
+    role: roleEnum("role").notNull().default("Tim"),
+    teamType: teamTypeEnum("team_type").notNull().default("Tim Sales"),
     createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow().onUpdateNow(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
   },
   (table) => ({
     emailIdx: uniqueIndex("user_email_idx").on(table.email),
   }),
 );
 
-export const session = mysqlTable(
+export const session = pgTable(
   "session",
   {
     id: varchar("id", { length: 255 }).primaryKey(),
     expiresAt: timestamp("expires_at", { mode: "date" }).notNull(),
     token: varchar("token", { length: 255 }).notNull(),
     createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow().onUpdateNow(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
     ipAddress: varchar("ip_address", { length: 255 }),
     userAgent: text("user_agent"),
     userId: varchar("user_id", { length: 255 })
@@ -64,7 +69,7 @@ export const session = mysqlTable(
   }),
 );
 
-export const account = mysqlTable("account", {
+export const account = pgTable("account", {
   id: varchar("id", { length: 255 }).primaryKey(),
   accountId: varchar("account_id", { length: 255 }).notNull(),
   providerId: varchar("provider_id", { length: 255 }).notNull(),
@@ -79,29 +84,29 @@ export const account = mysqlTable("account", {
   scope: varchar("scope", { length: 255 }),
   password: text("password"),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow().onUpdateNow(),
+  updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
 });
 
-export const verification = mysqlTable("verification", {
+export const verification = pgTable("verification", {
   id: varchar("id", { length: 255 }).primaryKey(),
   identifier: varchar("identifier", { length: 255 }).notNull(),
   value: varchar("value", { length: 255 }).notNull(),
   expiresAt: timestamp("expires_at", { mode: "date" }).notNull(),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow().onUpdateNow(),
+  updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
 });
 
-export const project = mysqlTable("project", {
+export const project = pgTable("project", {
   id: varchar("id", { length: 255 }).primaryKey(),
   namaProyek: varchar("nama_proyek", { length: 255 }).notNull(),
-  status: mysqlEnum("status", projectStatusValues).notNull().default("Berjalan"),
-  targetTugas: int("target_tugas").notNull().default(8),
+  status: projectStatusEnum("status").notNull().default("Berjalan"),
+  targetTugas: integer("target_tugas").notNull().default(8),
   deadline: date("deadline", { mode: "string" }),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow().onUpdateNow(),
+  updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
 });
 
-export const projectTargetTask = mysqlTable("project_target_task", {
+export const projectTargetTask = pgTable("project_target_task", {
   id: varchar("id", { length: 255 }).primaryKey(),
   projectId: varchar("project_id", { length: 255 })
     .notNull()
@@ -110,15 +115,15 @@ export const projectTargetTask = mysqlTable("project_target_task", {
     onDelete: "set null",
   }),
   deskripsi: text("deskripsi").notNull(),
-  status: mysqlEnum("status", targetTaskStatusValues).notNull().default("Belum Mulai"),
+  status: targetTaskStatusEnum("status").notNull().default("Belum Mulai"),
   mulai: date("mulai", { mode: "string" }),
   deadline: date("deadline", { mode: "string" }),
-  urutan: int("urutan").notNull().default(1),
+  urutan: integer("urutan").notNull().default(1),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow().onUpdateNow(),
+  updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
 });
 
-export const task = mysqlTable("task", {
+export const task = pgTable("task", {
   id: varchar("id", { length: 255 }).primaryKey(),
   projectId: varchar("project_id", { length: 255 })
     .notNull()
@@ -132,7 +137,7 @@ export const task = mysqlTable("task", {
   deskripsi: text("deskripsi").notNull(),
   tanggal: date("tanggal", { mode: "string" }).notNull(),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow().onUpdateNow(),
+  updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
 });
 
 export const userRelations = relations(user, ({ many }) => ({

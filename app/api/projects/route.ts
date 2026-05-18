@@ -1,4 +1,4 @@
-import { asc, desc } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
@@ -79,32 +79,40 @@ export async function POST(request: Request) {
     const targetItems = normalizeTargetDetails(payload.target_detail_tugas);
     const projectDeadline = getProjectDeadline(targetItems) ?? payload.deadline ?? null;
     const createdProject = await db.transaction(async (tx) => {
-      const [newProject] = await tx.insert(project).values({
-        id: crypto.randomUUID(),
+      const projectId = crypto.randomUUID();
+      await tx.insert(project).values({
+        id: projectId,
         namaProyek: payload.nama_proyek,
         status: payload.status,
         targetTugas: targetItems.length || payload.target_tugas,
         deadline: projectDeadline,
-      }).returning();
+      });
 
-      const newTargetTasks =
-        targetItems.length > 0
-          ? await tx
-              .insert(projectTargetTask)
-              .values(
-                targetItems.map((item, index) => ({
-                  id: crypto.randomUUID(),
-                  projectId: newProject.id,
-                  deskripsi: item.deskripsi,
-                  assignedUserId: item.assignedUserId,
-                  status: item.status,
-                  mulai: item.mulai,
-                  deadline: item.deadline,
-                  urutan: index + 1,
-                })),
-              )
-              .returning()
-          : [];
+      const targetRows = targetItems.map((item, index) => ({
+        id: crypto.randomUUID(),
+        projectId,
+        deskripsi: item.deskripsi,
+        assignedUserId: item.assignedUserId,
+        status: item.status,
+        mulai: item.mulai,
+        deadline: item.deadline,
+        urutan: index + 1,
+      }));
+
+      if (targetRows.length > 0) {
+        await tx.insert(projectTargetTask).values(targetRows);
+      }
+
+      const [newProject] = await tx
+        .select()
+        .from(project)
+        .where(eq(project.id, projectId))
+        .limit(1);
+      const newTargetTasks = await tx
+        .select()
+        .from(projectTargetTask)
+        .where(eq(projectTargetTask.projectId, projectId))
+        .orderBy(asc(projectTargetTask.urutan));
 
       return {
         project: newProject,

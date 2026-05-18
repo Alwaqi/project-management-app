@@ -81,7 +81,20 @@ export async function PATCH(request: Request, context: RouteContext) {
     const projectDeadline =
       targetItems ? getProjectDeadline(targetItems) : payload.deadline ?? undefined;
     const updatedProject = await db.transaction(async (tx) => {
-      const [projectRow] = await tx
+      const [existingProject] = await tx
+        .select()
+        .from(project)
+        .where(eq(project.id, id))
+        .limit(1);
+
+      if (!existingProject) {
+        return {
+          project: null,
+          assignmentTargets: [],
+        };
+      }
+
+      await tx
         .update(project)
         .set({
           ...(payload.nama_proyek ? { namaProyek: payload.nama_proyek } : {}),
@@ -92,8 +105,13 @@ export async function PATCH(request: Request, context: RouteContext) {
           ...(projectDeadline !== undefined ? { deadline: projectDeadline } : {}),
           updatedAt: new Date(),
         })
+        .where(eq(project.id, id));
+
+      const [projectRow] = await tx
+        .select()
+        .from(project)
         .where(eq(project.id, id))
-        .returning();
+        .limit(1);
 
       if (projectRow && targetItems) {
         const existingTargetTasks = await tx
@@ -210,11 +228,13 @@ export async function DELETE(request: Request, context: RouteContext) {
     if (currentUser.role !== "Leader") return forbiddenResponse("Hanya Leader yang bisa menghapus proyek");
 
     const { id } = await context.params;
-    const [deletedProject] = await db.delete(project).where(eq(project.id, id)).returning();
+    const [deletedProject] = await db.select().from(project).where(eq(project.id, id)).limit(1);
 
     if (!deletedProject) {
       return NextResponse.json({ error: "Proyek tidak ditemukan" }, { status: 404 });
     }
+
+    await db.delete(project).where(eq(project.id, id));
 
     return NextResponse.json({
       data: {

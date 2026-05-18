@@ -83,17 +83,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Deskripsi wajib diisi" }, { status: 400 });
     }
 
-    const [createdTask] = await db
-      .insert(task)
-      .values({
-        id: crypto.randomUUID(),
-        projectId: payload.project_id,
-        targetTaskId: payload.target_task_id ?? null,
-        userId: currentUser.id,
-        deskripsi: description,
-        tanggal: payload.tanggal ?? getLocalDateKey(),
-      })
-      .returning();
+    const taskId = crypto.randomUUID();
+    await db.insert(task).values({
+      id: taskId,
+      projectId: payload.project_id,
+      targetTaskId: payload.target_task_id ?? null,
+      userId: currentUser.id,
+      deskripsi: description,
+      tanggal: payload.tanggal ?? getLocalDateKey(),
+    });
+    const [createdTask] = await db.select().from(task).where(eq(task.id, taskId)).limit(1);
 
     if (payload.target_task_id) {
       await markTargetTaskDone(payload.target_task_id, currentUser.id);
@@ -164,17 +163,16 @@ export async function PATCH(request: Request) {
         return existingTask;
       }
 
-      const [createdTask] = await tx
-        .insert(task)
-        .values({
-          id: crypto.randomUUID(),
-          projectId: payload.project_id,
-          targetTaskId: payload.target_task_id,
-          userId: currentUser.id,
-          deskripsi: targetTask.deskripsi,
-          tanggal: payload.tanggal ?? getLocalDateKey(),
-        })
-        .returning();
+      const taskId = crypto.randomUUID();
+      await tx.insert(task).values({
+        id: taskId,
+        projectId: payload.project_id,
+        targetTaskId: payload.target_task_id,
+        userId: currentUser.id,
+        deskripsi: targetTask.deskripsi,
+        tanggal: payload.tanggal ?? getLocalDateKey(),
+      });
+      const [createdTask] = await tx.select().from(task).where(eq(task.id, taskId)).limit(1);
 
       return createdTask;
     });
