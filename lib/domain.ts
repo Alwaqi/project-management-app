@@ -4,7 +4,8 @@ export type TeamType =
   | "Tim SE"
   | "Tim Admin"
   | "Tim Marketing dan Konten"
-  | "Tim Edukasi";
+  | "Tim Edukasi"
+  | "Tim SDK";
 export type ProjectStatus = "Menunggu" | "Berjalan" | "Selesai";
 export type TargetTaskStatus = "Belum Mulai" | "Dikerjakan" | "Koreksi" | "Selesai";
 
@@ -14,6 +15,7 @@ export const teamTypeOptions: TeamType[] = [
   "Tim Admin",
   "Tim Marketing dan Konten",
   "Tim Edukasi",
+  "Tim SDK",
 ];
 
 export type TargetDetailTask = {

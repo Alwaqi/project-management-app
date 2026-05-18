@@ -129,7 +129,7 @@ export const auth = betterAuth({
         input: true,
       },
       teamType: {
-        type: ["Tim Sales", "Tim SE", "Tim Admin", "Tim Marketing dan Konten", "Tim Edukasi"],
+        type: ["Tim Sales", "Tim SE", "Tim Admin", "Tim Marketing dan Konten", "Tim Edukasi", "Tim SDK"],
         required: false,
         defaultValue: "Tim Sales",
         input: true,

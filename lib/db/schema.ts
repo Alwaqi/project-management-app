@@ -20,6 +20,7 @@ const teamTypeValues = [
   "Tim Admin",
   "Tim Marketing dan Konten",
   "Tim Edukasi",
+  "Tim SDK",
 ] as const;
 const projectStatusValues = ["Menunggu", "Berjalan", "Selesai"] as const;
 const targetTaskStatusValues = [

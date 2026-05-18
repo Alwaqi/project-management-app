@@ -8,6 +8,7 @@ const teamTypeSchema = z.enum([
   "Tim Admin",
   "Tim Marketing dan Konten",
   "Tim Edukasi",
+  "Tim SDK",
 ]);
 
 const targetDetailTaskSchema = z.union([
