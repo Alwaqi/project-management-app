@@ -13,7 +13,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 
-const roleValues = ["Leader", "Tim"] as const;
+const roleValues = ["Leader", "Tim", "Manajemen"] as const;
 const teamTypeValues = [
   "Tim Sales",
   "Tim SE",

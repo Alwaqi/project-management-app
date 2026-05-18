@@ -55,6 +55,7 @@ export function canLeaderAccessProject(
   collaboratorTeams: TeamType[],
   currentUser: RequestUser,
 ) {
+  if (currentUser.role === "Manajemen") return true;
   if (currentUser.role !== "Leader") return false;
   return (
     ownerTeam === currentUser.team_type ||
@@ -66,7 +67,7 @@ export function canAccessAssignedTarget(
   assignedUserId: string | null,
   currentUser: RequestUser,
 ) {
-  if (currentUser.role === "Leader") return true;
+  if (currentUser.role === "Leader" || currentUser.role === "Manajemen") return true;
   return !assignedUserId || assignedUserId === currentUser.id;
 }
 
@@ -91,6 +92,11 @@ export async function getProjectAccessContext(projectId: string) {
 }
 
 export async function getAccessibleProjectIdsForLeader(currentUser: RequestUser) {
+  if (currentUser.role === "Manajemen") {
+    const allRows = await db.select({ id: project.id }).from(project);
+    return allRows.map((r) => r.id);
+  }
+
   if (currentUser.role !== "Leader") {
     return null;
   }

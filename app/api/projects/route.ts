@@ -47,7 +47,9 @@ export async function GET(request: Request) {
     const collaboratorTeamsByProject = groupCollaboratorTeamsByProject(collaboratorRows);
 
     let visibleProjectRows = projectRows;
-    if (currentUser.role === "Leader") {
+    if (currentUser.role === "Manajemen") {
+      visibleProjectRows = projectRows;
+    } else if (currentUser.role === "Leader") {
       visibleProjectRows = projectRows.filter((row) => {
         const collabs = collaboratorTeamsByProject.get(row.id) ?? [];
         return (
@@ -62,12 +64,12 @@ export async function GET(request: Request) {
       });
     }
 
+    const isPrivileged = currentUser.role === "Leader" || currentUser.role === "Manajemen";
     const projects = visibleProjectRows.map((row) => {
       const allTargets = targetTasksByProject.get(row.id) ?? [];
-      const targetsForUser =
-        currentUser.role === "Leader"
-          ? allTargets
-          : allTargets.filter((target) => target.assignedUserId === currentUser.id);
+      const targetsForUser = isPrivileged
+        ? allTargets
+        : allTargets.filter((target) => target.assignedUserId === currentUser.id);
       return toProjectDto(
         row,
         targetsForUser,

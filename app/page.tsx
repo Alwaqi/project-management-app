@@ -183,6 +183,12 @@ export default function Home() {
     writeActiveView(activeView);
   }, [activeView]);
 
+  useEffect(() => {
+    if (activeUser?.role === "Manajemen" && activeView === "journal") {
+      setActiveView("dashboard");
+    }
+  }, [activeUser?.role, activeView]);
+
   const showToast = (message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(""), 2400);
@@ -217,7 +223,7 @@ export default function Home() {
           });
         }
 
-        if (currentUser?.role === "Leader") {
+        if (currentUser?.role === "Leader" || currentUser?.role === "Manajemen") {
           void fetchJson<DashboardSummary>("/api/dashboard/summary")
             .then((summary) => setDashboardSummary(summary))
             .catch(() => setDashboardSummary(null));
@@ -449,7 +455,9 @@ export default function Home() {
             </div>
 
             <nav className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-1">
-              {navItems.map((item) => {
+              {navItems
+                .filter((item) => !(activeUser.role === "Manajemen" && item.id === "journal"))
+                .map((item) => {
                 const Icon = item.icon;
                 const tone = iconToneClass[item.tone];
                 const isActive = activeView === item.id;
@@ -775,6 +783,7 @@ function LoginScreen({
                     <SelectContent>
                       <SelectItem value="Tim">Anggota Tim</SelectItem>
                       <SelectItem value="Leader">Leader</SelectItem>
+                      <SelectItem value="Manajemen">Manajemen SDK</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -970,7 +979,7 @@ function DashboardView({
         }
       />
 
-      {activeUser.role === "Leader" && (
+      {(activeUser.role === "Leader" || activeUser.role === "Manajemen") && (
         <div className="grid min-w-0 gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
           <MetricCard label="Proyek Berjalan" value={metrics?.proyek_berjalan ?? activeProjects.length} icon={FolderKanban} tone="indigo" />
           <MetricCard label="Tugas Hari Ini" value={metrics?.tugas_hari_ini ?? todayTasks.length} icon={ClipboardList} tone="emerald" />
@@ -1054,6 +1063,29 @@ function DashboardView({
   );
 }
 
+type KpiPeriod = "all" | "month" | "quarter" | "semester" | "year";
+
+const periodOptions: Array<{ value: KpiPeriod; label: string }> = [
+  { value: "all", label: "Semua waktu" },
+  { value: "month", label: "Bulan ini" },
+  { value: "quarter", label: "Kuarter ini" },
+  { value: "semester", label: "Semester ini" },
+  { value: "year", label: "Tahun ini" },
+];
+
+function isWithinPeriod(dateStr: string | null, period: KpiPeriod, refDate: Date) {
+  if (period === "all") return true;
+  if (!dateStr) return false;
+  const d = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return false;
+  if (d.getFullYear() !== refDate.getFullYear()) return false;
+  if (period === "year") return true;
+  if (period === "month") return d.getMonth() === refDate.getMonth();
+  if (period === "quarter") return Math.floor(d.getMonth() / 3) === Math.floor(refDate.getMonth() / 3);
+  if (period === "semester") return Math.floor(d.getMonth() / 6) === Math.floor(refDate.getMonth() / 6);
+  return true;
+}
+
 function TeamKpiChart({
   activeUser,
   projects,
@@ -1067,33 +1099,67 @@ function TeamKpiChart({
   users: User[];
   today: string;
 }) {
-  const viewableMembers = useMemo(() => {
-    if (activeUser.role === "Leader") {
-      const same = users.filter((u) => u.team_type === activeUser.team_type);
-      const ids = new Set(same.map((u) => u.id));
-      if (!ids.has(activeUser.id)) same.unshift(activeUser);
-      return same.sort((a, b) => a.nama.localeCompare(b.nama));
+  const isManajemen = activeUser.role === "Manajemen";
+  const isLeader = activeUser.role === "Leader";
+  const [period, setPeriod] = useState<KpiPeriod>("all");
+  const [selectedTeam, setSelectedTeam] = useState<TeamType | "all">(
+    isManajemen ? "all" : activeUser.team_type,
+  );
+  const [selectedMemberId, setSelectedMemberId] = useState<string>(
+    isManajemen ? "all" : activeUser.id,
+  );
+
+  const teamScopedUsers = useMemo(() => {
+    if (isManajemen) {
+      return selectedTeam === "all"
+        ? users
+        : users.filter((u) => u.team_type === selectedTeam);
+    }
+    if (isLeader) {
+      return users.filter((u) => u.team_type === activeUser.team_type);
     }
     return [activeUser];
-  }, [activeUser, users]);
-  const [selectedMemberId, setSelectedMemberId] = useState(activeUser.id);
-  useEffect(() => {
-    if (!viewableMembers.some((member) => member.id === selectedMemberId)) {
-      setSelectedMemberId(activeUser.id);
-    }
-  }, [activeUser.id, selectedMemberId, viewableMembers]);
-  const selectedMember =
-    viewableMembers.find((member) => member.id === selectedMemberId) ?? activeUser;
-  const isViewingSelf = selectedMember.id === activeUser.id;
+  }, [activeUser, isLeader, isManajemen, selectedTeam, users]);
 
-  const assignedTargets = projects.flatMap((project) =>
-    project.target_detail_tugas
-      .filter((target) => target.assigned_user_id === selectedMember.id)
-      .map((target) => ({
-        project,
-        target,
-      })),
+  const memberOptions = useMemo(() => {
+    const sorted = [...teamScopedUsers].sort((a, b) => a.nama.localeCompare(b.nama));
+    if (!isManajemen && !sorted.some((u) => u.id === activeUser.id)) {
+      sorted.unshift(activeUser);
+    }
+    return sorted;
+  }, [activeUser, isManajemen, teamScopedUsers]);
+
+  useEffect(() => {
+    if (selectedMemberId !== "all" && !memberOptions.some((m) => m.id === selectedMemberId)) {
+      setSelectedMemberId(isManajemen ? "all" : activeUser.id);
+    }
+  }, [activeUser.id, isManajemen, memberOptions, selectedMemberId]);
+
+  const selectedMember = memberOptions.find((m) => m.id === selectedMemberId) ?? null;
+  const isViewingSelf = selectedMember?.id === activeUser.id;
+  const refDate = useMemo(() => new Date(`${today}T00:00:00`), [today]);
+
+  const teamUserIdSet = useMemo(
+    () => new Set(teamScopedUsers.map((u) => u.id)),
+    [teamScopedUsers],
   );
+
+  const assignedTargets = useMemo(() => {
+    return projects.flatMap((project) =>
+      project.target_detail_tugas
+        .filter((target) => {
+          if (!target.assigned_user_id) return false;
+          if (selectedMemberId !== "all") {
+            if (target.assigned_user_id !== selectedMemberId) return false;
+          } else {
+            if (!teamUserIdSet.has(target.assigned_user_id)) return false;
+          }
+          if (!isWithinPeriod(target.deadline, period, refDate)) return false;
+          return true;
+        })
+        .map((target) => ({ project, target })),
+    );
+  }, [period, projects, refDate, selectedMemberId, teamUserIdSet]);
   const completedTargetIds = getCompletedTargetIds(tasks);
   const totalTargets = assignedTargets.length;
   const completedTargets = assignedTargets.filter(({ target }) =>
@@ -1124,43 +1190,101 @@ function TeamKpiChart({
     .sort((first, second) => (first.target.deadline ?? "").localeCompare(second.target.deadline ?? ""))
     .slice(0, 3);
 
+  const kpiTitle = selectedMember
+    ? isViewingSelf
+      ? "KPI Saya"
+      : `KPI ${selectedMember.nama}`
+    : selectedTeam === "all"
+      ? "KPI Organisasi"
+      : `KPI ${selectedTeam}`;
+  const kpiDescription = selectedMember
+    ? isViewingSelf
+      ? "Progress target yang ditugaskan ke akun Anda."
+      : `Target ${selectedMember.nama} (${selectedMember.team_type}).`
+    : selectedTeam === "all"
+      ? "Agregat target seluruh tim SDK."
+      : `Agregat target ${selectedTeam}.`;
+
   return (
     <Card>
       <CardHeader className="pb-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl sm:hidden", iconToneClass.indigo.bg)}>
+        <div className="flex flex-col gap-3">
+          <div className="flex items-start gap-3">
+            <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", iconToneClass.indigo.bg)}>
               <Gauge className={cn("h-5 w-5", iconToneClass.indigo.text)} aria-hidden="true" />
             </div>
-            <div className="min-w-0">
-              <CardTitle className="truncate text-sm sm:text-base">
-                KPI {isViewingSelf ? "Saya" : selectedMember.nama}
-              </CardTitle>
-              <CardDescription className="line-clamp-2 text-xs">
-                {isViewingSelf
-                  ? "Progress target yang ditugaskan ke akun Anda."
-                  : `Target ${selectedMember.nama} (${selectedMember.team_type}).`}
-              </CardDescription>
+            <div className="min-w-0 flex-1">
+              <CardTitle className="truncate text-sm sm:text-base">{kpiTitle}</CardTitle>
+              <CardDescription className="line-clamp-2 text-xs">{kpiDescription}</CardDescription>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            {viewableMembers.length > 1 && (
-              <Select value={selectedMemberId} onValueChange={setSelectedMemberId}>
-                <SelectTrigger className="h-9 w-full text-xs sm:w-48">
-                  <SelectValue placeholder="Pilih anggota" />
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-1">
+              <Label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                <Filter className="h-3 w-3" aria-hidden="true" />
+                Periode
+              </Label>
+              <Select value={period} onValueChange={(v) => setPeriod(v as KpiPeriod)}>
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue placeholder="Pilih periode" />
                 </SelectTrigger>
                 <SelectContent>
-                  {viewableMembers.map((member) => (
-                    <SelectItem key={member.id} value={member.id}>
-                      {member.id === activeUser.id ? `${member.nama} (Saya)` : member.nama}
+                  {periodOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            )}
-            <div className={cn("hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl sm:flex", iconToneClass.indigo.bg)}>
-              <Gauge className={cn("h-5 w-5", iconToneClass.indigo.text)} aria-hidden="true" />
             </div>
+            {isManajemen && (
+              <div className="grid gap-1">
+                <Label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                  <Users className="h-3 w-3" aria-hidden="true" />
+                  Tim
+                </Label>
+                <Select
+                  value={selectedTeam}
+                  onValueChange={(v) => {
+                    setSelectedTeam(v as TeamType | "all");
+                    setSelectedMemberId("all");
+                  }}
+                >
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue placeholder="Semua tim" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua tim</SelectItem>
+                    {teamTypeOptions.map((team) => (
+                      <SelectItem key={team} value={team}>
+                        {team}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {(isManajemen || isLeader) && (
+              <div className="grid gap-1">
+                <Label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                  <Filter className="h-3 w-3" aria-hidden="true" />
+                  Anggota
+                </Label>
+                <Select value={selectedMemberId} onValueChange={setSelectedMemberId}>
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue placeholder="Pilih anggota" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua anggota</SelectItem>
+                    {memberOptions.map((member) => (
+                      <SelectItem key={member.id} value={member.id}>
+                        {member.id === activeUser.id ? `${member.nama} (Saya)` : member.nama}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
         </div>
       </CardHeader>

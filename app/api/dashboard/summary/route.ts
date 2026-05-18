@@ -39,7 +39,9 @@ export async function GET(request: Request) {
   try {
     const currentUser = await getRequestUser(request);
     if (!currentUser) return unauthorizedResponse();
-    if (currentUser.role !== "Leader") return forbiddenResponse("Dashboard hanya untuk Leader");
+    if (currentUser.role !== "Leader" && currentUser.role !== "Manajemen") {
+      return forbiddenResponse("Dashboard hanya untuk Leader / Manajemen");
+    }
 
     const accessibleProjectIds = (await getAccessibleProjectIdsForLeader(currentUser)) ?? [];
 
@@ -85,7 +87,9 @@ export async function GET(request: Request) {
         .select()
         .from(projectCollaboratorTeam)
         .where(inArray(projectCollaboratorTeam.projectId, accessibleProjectIds)),
-      db.select().from(user).where(eq(user.teamType, currentUser.team_type)),
+      currentUser.role === "Manajemen"
+        ? db.select().from(user)
+        : db.select().from(user).where(eq(user.teamType, currentUser.team_type)),
     ]);
 
     const targetTasksByProject = groupTargetTasksByProject(targetTaskRows);

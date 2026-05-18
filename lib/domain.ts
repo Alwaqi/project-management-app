@@ -1,4 +1,4 @@
-export type Role = "Leader" | "Tim";
+export type Role = "Leader" | "Tim" | "Manajemen";
 export type TeamType =
   | "Tim Sales"
   | "Tim SE"

@@ -15,6 +15,13 @@
       "when": 1779087838904,
       "tag": "0001_parallel_dark_phoenix",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779099144012,
+      "tag": "0002_strange_rogue",
+      "breakpoints": true
     }
   ]
 }
