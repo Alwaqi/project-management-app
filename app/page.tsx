@@ -1057,10 +1057,12 @@ function TeamKpiChart({
   const isViewingSelf = selectedMember.id === activeUser.id;
 
   const assignedTargets = projects.flatMap((project) =>
-    getAssignedTargetDetails(project, selectedMember).map((target) => ({
-      project,
-      target,
-    })),
+    project.target_detail_tugas
+      .filter((target) => target.assigned_user_id === selectedMember.id)
+      .map((target) => ({
+        project,
+        target,
+      })),
   );
   const completedTargetIds = getCompletedTargetIds(tasks);
   const totalTargets = assignedTargets.length;
