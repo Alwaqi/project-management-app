@@ -1404,10 +1404,48 @@ function GanttChart({
   users: User[];
   today: string;
 }) {
+  const isManajemen = activeUser.role === "Manajemen";
+  const defaultTeam: TeamType = useMemo(() => {
+    if (!isManajemen) return activeUser.team_type;
+    const teamWithData = teamTypeOptions.find((team) =>
+      projects.some(
+        (p) => p.owner_team === team || p.collaborator_teams.includes(team),
+      ),
+    );
+    return teamWithData ?? teamTypeOptions[0];
+  }, [activeUser.team_type, isManajemen, projects]);
+  const [selectedTeam, setSelectedTeam] = useState<TeamType>(defaultTeam);
   const [selectedProjectId, setSelectedProjectId] = useState("all");
   const [expandedTargetIds, setExpandedTargetIds] = useState<Set<string>>(new Set());
   const completedTargetIds = getCompletedTargetIds(tasks);
-  const visibleProjects = projects.filter((project) => getAssignedTargetDetails(project, activeUser).length > 0);
+
+  useEffect(() => {
+    if (isManajemen) setSelectedTeam((current) => current ?? defaultTeam);
+  }, [defaultTeam, isManajemen]);
+
+  const teamUserIds = useMemo(
+    () => new Set(users.filter((u) => u.team_type === selectedTeam).map((u) => u.id)),
+    [selectedTeam, users],
+  );
+
+  const getScopedTargets = (project: ProjectWithProgress) => {
+    if (isManajemen) {
+      return project.target_detail_tugas.filter(
+        (target) => target.assigned_user_id && teamUserIds.has(target.assigned_user_id),
+      );
+    }
+    return getAssignedTargetDetails(project, activeUser);
+  };
+
+  const visibleProjects = projects.filter((project) => {
+    if (isManajemen) {
+      const teamInvolved =
+        project.owner_team === selectedTeam ||
+        project.collaborator_teams.includes(selectedTeam);
+      return teamInvolved && getScopedTargets(project).length > 0;
+    }
+    return getScopedTargets(project).length > 0;
+  });
   const filteredProjects =
     selectedProjectId === "all"
       ? visibleProjects
@@ -1419,7 +1457,7 @@ function GanttChart({
   }, [selectedProjectId, visibleProjects]);
   const ganttItems = filteredProjects
     .flatMap((project) =>
-      getAssignedTargetDetails(project, activeUser).map((target) => {
+      getScopedTargets(project).map((target) => {
         const start = target.mulai ?? project.dibuat_pada;
         const end = target.deadline ?? project.deadline ?? start;
 
@@ -1474,27 +1512,57 @@ function GanttChart({
           <div className="min-w-0">
             <CardTitle className="text-sm sm:text-base">Gantt Detail Tugas</CardTitle>
             <CardDescription className="text-xs">
-              Timeline detail tugas dengan filter proyek.
+              {isManajemen
+                ? `Timeline ${selectedTeam} dengan filter proyek.`
+                : "Timeline detail tugas dengan filter proyek."}
             </CardDescription>
           </div>
-          <div className="grid gap-1 sm:min-w-56">
-            <Label className="flex items-center gap-1 text-[11px] text-muted-foreground">
-              <Filter className="h-3 w-3" aria-hidden="true" />
-              Filter proyek
-            </Label>
-            <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-              <SelectTrigger className="h-9 text-xs">
-                <SelectValue placeholder="Pilih proyek" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Semua proyek</SelectItem>
-                {visibleProjects.map((project) => (
-                  <SelectItem key={project.id} value={project.id}>
-                    {project.nama_proyek}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="grid gap-2 sm:grid-cols-2 sm:min-w-[24rem]">
+            {isManajemen && (
+              <div className="grid gap-1">
+                <Label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                  <Users className="h-3 w-3" aria-hidden="true" />
+                  Filter tim
+                </Label>
+                <Select
+                  value={selectedTeam}
+                  onValueChange={(v) => {
+                    setSelectedTeam(v as TeamType);
+                    setSelectedProjectId("all");
+                  }}
+                >
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue placeholder="Pilih tim" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {teamTypeOptions.map((team) => (
+                      <SelectItem key={team} value={team}>
+                        {team}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div className="grid gap-1">
+              <Label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                <Filter className="h-3 w-3" aria-hidden="true" />
+                Filter proyek
+              </Label>
+              <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue placeholder="Pilih proyek" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua proyek</SelectItem>
+                  {visibleProjects.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      {project.nama_proyek}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
       </CardHeader>
@@ -2414,9 +2482,44 @@ function KanbanView({
   users: User[];
 }) {
   const today = getLocalDateKey();
+  const isManajemen = activeUser.role === "Manajemen";
+  const defaultTeam: TeamType = useMemo(() => {
+    if (!isManajemen) return activeUser.team_type;
+    const teamWithData = teamTypeOptions.find((team) =>
+      projects.some(
+        (p) => p.owner_team === team || p.collaborator_teams.includes(team),
+      ),
+    );
+    return teamWithData ?? teamTypeOptions[0];
+  }, [activeUser.team_type, isManajemen, projects]);
+  const [selectedTeam, setSelectedTeam] = useState<TeamType>(defaultTeam);
   const [selectedProjectId, setSelectedProjectId] = useState("all");
   const completedTargetIds = getCompletedTargetIds(tasks);
-  const visibleProjects = projects.filter((project) => getKanbanTargetDetails(project, activeUser).length > 0);
+
+  const teamUserIds = useMemo(
+    () => new Set(users.filter((u) => u.team_type === selectedTeam).map((u) => u.id)),
+    [selectedTeam, users],
+  );
+
+  const getScopedTargets = (project: ProjectWithProgress) => {
+    if (isManajemen) {
+      return project.target_detail_tugas.filter(
+        (target) => target.assigned_user_id && teamUserIds.has(target.assigned_user_id),
+      );
+    }
+    return getKanbanTargetDetails(project, activeUser);
+  };
+
+  const visibleProjects = projects.filter((project) => {
+    if (isManajemen) {
+      const teamInvolved =
+        project.owner_team === selectedTeam ||
+        project.collaborator_teams.includes(selectedTeam);
+      return teamInvolved && getScopedTargets(project).length > 0;
+    }
+    return getScopedTargets(project).length > 0;
+  });
+
   const filteredProjects =
     selectedProjectId === "all"
       ? visibleProjects
@@ -2428,7 +2531,7 @@ function KanbanView({
   }, [selectedProjectId, visibleProjects]);
   const kanbanItems = filteredProjects
     .flatMap((project) =>
-      getKanbanTargetDetails(project, activeUser).map((target) => ({
+      getScopedTargets(project).map((target) => ({
         project,
         target,
         status: getEffectiveTargetStatus(target, completedTargetIds),
@@ -2453,29 +2556,59 @@ function KanbanView({
       <PageHeader
         title="Kanban Tugas"
         description={
-          activeUser.role === "Leader"
-            ? "Pantau semua target tugas berdasarkan status pengerjaan."
-            : "Pantau target tugas yang ditugaskan ke akun Anda."
+          isManajemen
+            ? `Pantau target ${selectedTeam} berdasarkan status pengerjaan.`
+            : activeUser.role === "Leader"
+              ? "Pantau semua target tugas berdasarkan status pengerjaan."
+              : "Pantau target tugas yang ditugaskan ke akun Anda."
         }
         action={
-          <div className="grid gap-2 sm:min-w-72">
-            <Label className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Filter className="h-3.5 w-3.5" aria-hidden="true" />
-              Filter proyek
-            </Label>
-            <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Pilih proyek" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Semua proyek</SelectItem>
-                {visibleProjects.map((project) => (
-                  <SelectItem key={project.id} value={project.id}>
-                    {project.nama_proyek}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="grid gap-2 sm:grid-cols-2 sm:min-w-[24rem]">
+            {isManajemen && (
+              <div className="grid gap-1">
+                <Label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                  <Users className="h-3 w-3" aria-hidden="true" />
+                  Filter tim
+                </Label>
+                <Select
+                  value={selectedTeam}
+                  onValueChange={(v) => {
+                    setSelectedTeam(v as TeamType);
+                    setSelectedProjectId("all");
+                  }}
+                >
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue placeholder="Pilih tim" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {teamTypeOptions.map((team) => (
+                      <SelectItem key={team} value={team}>
+                        {team}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div className="grid gap-1">
+              <Label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                <Filter className="h-3 w-3" aria-hidden="true" />
+                Filter proyek
+              </Label>
+              <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue placeholder="Pilih proyek" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua proyek</SelectItem>
+                  {visibleProjects.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      {project.nama_proyek}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         }
       />
