@@ -1,15 +1,21 @@
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, desc, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
-import { project, projectTargetTask, task } from "@/lib/db/schema";
 import {
-  canAccessAssignedTarget,
+  project,
+  projectCollaboratorTeam,
+  projectTargetTask,
+  task,
+  user,
+} from "@/lib/db/schema";
+import {
   forbiddenResponse,
   getRequestUser,
   unauthorizedResponse,
 } from "@/lib/api/authz";
 import {
+  groupCollaboratorTeamsByProject,
   groupTargetTasksByProject,
   toProjectDto,
   toProjectWithProgress,
@@ -18,6 +24,7 @@ import {
 import { databaseUnavailableResponse, handleRouteError } from "@/lib/api/responses";
 import { sendTargetAssignmentEmails } from "@/lib/api/assignment-notifications";
 import { projectCreateSchema } from "@/lib/api/validation";
+import type { TeamType } from "@/lib/domain";
 
 export const runtime = "nodejs";
 
@@ -29,34 +36,44 @@ export async function GET(request: Request) {
     const currentUser = await getRequestUser(request);
     if (!currentUser) return unauthorizedResponse();
 
-    const [projectRows, targetTaskRows, taskRows] = await Promise.all([
+    const [projectRows, targetTaskRows, taskRows, collaboratorRows] = await Promise.all([
       db.select().from(project).orderBy(desc(project.createdAt)),
       db.select().from(projectTargetTask).orderBy(asc(projectTargetTask.urutan)),
       db.select().from(task),
+      db.select().from(projectCollaboratorTeam),
     ]);
     const tasks = taskRows.map(toTaskDto);
-    const visibleTargetTaskRows =
-      currentUser.role === "Leader"
-        ? targetTaskRows
-        : targetTaskRows.filter((targetTask) =>
-            canAccessAssignedTarget(targetTask.assignedUserId, currentUser),
-          );
     const targetTasksByProject = groupTargetTasksByProject(targetTaskRows);
-    const visibleTargetTasksByProject = groupTargetTasksByProject(visibleTargetTaskRows);
-    const projects = projectRows
-      .filter(
-        (item) =>
-          currentUser.role === "Leader" ||
-          (visibleTargetTasksByProject.get(item.id)?.length ?? 0) > 0,
-      )
-      .map((item) =>
-        toProjectDto(
-          item,
-          currentUser.role === "Leader"
-            ? targetTasksByProject.get(item.id) ?? []
-            : visibleTargetTasksByProject.get(item.id) ?? [],
-        ),
+    const collaboratorTeamsByProject = groupCollaboratorTeamsByProject(collaboratorRows);
+
+    let visibleProjectRows = projectRows;
+    if (currentUser.role === "Leader") {
+      visibleProjectRows = projectRows.filter((row) => {
+        const collabs = collaboratorTeamsByProject.get(row.id) ?? [];
+        return (
+          row.ownerTeam === currentUser.team_type ||
+          collabs.includes(currentUser.team_type)
+        );
+      });
+    } else {
+      visibleProjectRows = projectRows.filter((row) => {
+        const targets = targetTasksByProject.get(row.id) ?? [];
+        return targets.some((target) => target.assignedUserId === currentUser.id);
+      });
+    }
+
+    const projects = visibleProjectRows.map((row) => {
+      const allTargets = targetTasksByProject.get(row.id) ?? [];
+      const targetsForUser =
+        currentUser.role === "Leader"
+          ? allTargets
+          : allTargets.filter((target) => target.assignedUserId === currentUser.id);
+      return toProjectDto(
+        row,
+        targetsForUser,
+        collaboratorTeamsByProject.get(row.id) ?? [],
       );
+    });
 
     return NextResponse.json({
       data: projects.map((item) => toProjectWithProgress(item, tasks)),
@@ -78,6 +95,32 @@ export async function POST(request: Request) {
     const payload = projectCreateSchema.parse(await request.json());
     const targetItems = normalizeTargetDetails(payload.target_detail_tugas);
     const projectDeadline = getProjectDeadline(targetItems) ?? payload.deadline ?? null;
+    const ownerTeam = currentUser.team_type;
+    const collaboratorTeams = Array.from(
+      new Set((payload.collaborator_teams ?? []).filter((team) => team !== ownerTeam)),
+    );
+
+    const assignedUserIds = targetItems
+      .map((item) => item.assignedUserId)
+      .filter((id): id is string => Boolean(id));
+
+    if (assignedUserIds.length > 0) {
+      const allowedTeams = [ownerTeam, ...collaboratorTeams];
+      const userRows = await db
+        .select({ id: user.id, teamType: user.teamType })
+        .from(user)
+        .where(inArray(user.id, assignedUserIds));
+      const invalid = userRows.find((row) => !allowedTeams.includes(row.teamType));
+      if (invalid) {
+        return NextResponse.json(
+          {
+            error: "Ada user yang ditugaskan tidak berasal dari tim owner atau collaborator.",
+          },
+          { status: 400 },
+        );
+      }
+    }
+
     const createdProject = await db.transaction(async (tx) => {
       const projectId = crypto.randomUUID();
       await tx.insert(project).values({
@@ -86,7 +129,17 @@ export async function POST(request: Request) {
         status: payload.status,
         targetTugas: targetItems.length || payload.target_tugas,
         deadline: projectDeadline,
+        ownerTeam,
       });
+
+      if (collaboratorTeams.length > 0) {
+        await tx.insert(projectCollaboratorTeam).values(
+          collaboratorTeams.map((teamType) => ({
+            projectId,
+            teamType,
+          })),
+        );
+      }
 
       const targetRows = targetItems.map((item, index) => ({
         id: crypto.randomUUID(),
@@ -117,6 +170,7 @@ export async function POST(request: Request) {
       return {
         project: newProject,
         targetTasks: newTargetTasks,
+        collaboratorTeams,
       };
     });
 
@@ -133,7 +187,11 @@ export async function POST(request: Request) {
 
     return NextResponse.json(
       {
-        data: toProjectDto(createdProject.project, createdProject.targetTasks),
+        data: toProjectDto(
+          createdProject.project,
+          createdProject.targetTasks,
+          createdProject.collaboratorTeams as TeamType[],
+        ),
       },
       { status: 201 },
     );
@@ -192,3 +250,4 @@ function getProjectDeadline(
     .sort()
     .at(-1) ?? null;
 }
+

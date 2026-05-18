@@ -2,6 +2,14 @@ import { z } from "zod";
 
 const targetTaskStatusSchema = z.enum(["Belum Mulai", "Dikerjakan", "Koreksi", "Selesai"]);
 
+const teamTypeSchema = z.enum([
+  "Tim Sales",
+  "Tim SE",
+  "Tim Admin",
+  "Tim Marketing dan Konten",
+  "Tim Edukasi",
+]);
+
 const targetDetailTaskSchema = z.union([
   z.string().trim().min(1),
   z.object({
@@ -32,6 +40,7 @@ export const projectCreateSchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Deadline harus YYYY-MM-DD")
     .nullable()
     .optional(),
+  collaborator_teams: z.array(teamTypeSchema).optional(),
 });
 
 export const projectUpdateSchema = projectCreateSchema.partial().refine(

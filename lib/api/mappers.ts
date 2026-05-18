@@ -3,11 +3,21 @@ import {
   getProjectProgress,
   Project,
   Task,
+  TeamType,
   User,
 } from "@/lib/domain";
-import { ProjectRow, ProjectTargetTaskRow, TaskRow } from "@/lib/db/schema";
+import {
+  ProjectCollaboratorTeamRow,
+  ProjectRow,
+  ProjectTargetTaskRow,
+  TaskRow,
+} from "@/lib/db/schema";
 
-export function toProjectDto(project: ProjectRow, targetTasks: ProjectTargetTaskRow[] = []) {
+export function toProjectDto(
+  project: ProjectRow,
+  targetTasks: ProjectTargetTaskRow[] = [],
+  collaboratorTeams: TeamType[] = [],
+) {
   return {
     id: project.id,
     nama_proyek: project.namaProyek,
@@ -27,7 +37,20 @@ export function toProjectDto(project: ProjectRow, targetTasks: ProjectTargetTask
       })),
     deadline: project.deadline,
     dibuat_pada: toDateKey(project.createdAt),
+    owner_team: project.ownerTeam,
+    collaborator_teams: collaboratorTeams,
   };
+}
+
+export function groupCollaboratorTeamsByProject(
+  rows: ProjectCollaboratorTeamRow[],
+) {
+  return rows.reduce<Map<string, TeamType[]>>((groups, row) => {
+    const group = groups.get(row.projectId) ?? [];
+    group.push(row.teamType);
+    groups.set(row.projectId, group);
+    return groups;
+  }, new Map());
 }
 
 export function groupTargetTasksByProject(targetTasks: ProjectTargetTaskRow[]) {

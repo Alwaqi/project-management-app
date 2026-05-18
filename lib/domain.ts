@@ -42,6 +42,8 @@ export type Project = {
   target_detail_tugas: TargetDetailTask[];
   deadline: string | null;
   dibuat_pada: string;
+  owner_team: TeamType;
+  collaborator_teams: TeamType[];
 };
 
 export type Task = {

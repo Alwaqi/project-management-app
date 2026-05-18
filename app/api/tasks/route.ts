@@ -1,11 +1,14 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
 import { projectTargetTask, task } from "@/lib/db/schema";
 import {
   canAccessAssignedTarget,
+  canLeaderAccessProject,
   forbiddenResponse,
+  getAccessibleProjectIdsForLeader,
+  getProjectAccessContext,
   getRequestUser,
   unauthorizedResponse,
 } from "@/lib/api/authz";
@@ -23,14 +26,23 @@ export async function GET(request: Request) {
     const currentUser = await getRequestUser(request);
     if (!currentUser) return unauthorizedResponse();
 
-    const tasks =
-      currentUser.role === "Leader"
-        ? await db.select().from(task).orderBy(desc(task.createdAt))
-        : await db
+    let tasks;
+    if (currentUser.role === "Leader") {
+      const accessibleProjectIds = await getAccessibleProjectIdsForLeader(currentUser);
+      tasks = accessibleProjectIds && accessibleProjectIds.length > 0
+        ? await db
             .select()
             .from(task)
-            .where(eq(task.userId, currentUser.id))
-            .orderBy(desc(task.createdAt));
+            .where(inArray(task.projectId, accessibleProjectIds))
+            .orderBy(desc(task.createdAt))
+        : [];
+    } else {
+      tasks = await db
+        .select()
+        .from(task)
+        .where(eq(task.userId, currentUser.id))
+        .orderBy(desc(task.createdAt));
+    }
 
     return NextResponse.json({
       data: tasks.map(toTaskDto),
@@ -49,6 +61,14 @@ export async function POST(request: Request) {
     if (!currentUser) return unauthorizedResponse();
 
     const payload = taskCreateSchema.parse(await request.json());
+
+    if (currentUser.role === "Leader") {
+      const accessCtx = await getProjectAccessContext(payload.project_id);
+      if (!accessCtx || !canLeaderAccessProject(accessCtx.ownerTeam, accessCtx.collaboratorTeams, currentUser)) {
+        return forbiddenResponse("Proyek ini bukan milik tim Anda");
+      }
+    }
+
     const targetTask = payload.target_task_id
       ? await getTargetTask(payload.target_task_id, payload.project_id)
       : null;
@@ -118,6 +138,14 @@ export async function PATCH(request: Request) {
     if (!currentUser) return unauthorizedResponse();
 
     const payload = taskStatusUpdateSchema.parse(await request.json());
+
+    if (currentUser.role === "Leader") {
+      const accessCtx = await getProjectAccessContext(payload.project_id);
+      if (!accessCtx || !canLeaderAccessProject(accessCtx.ownerTeam, accessCtx.collaboratorTeams, currentUser)) {
+        return forbiddenResponse("Proyek ini bukan milik tim Anda");
+      }
+    }
+
     const targetTask = await getTargetTask(payload.target_task_id, payload.project_id);
 
     if (!targetTask) {
@@ -194,6 +222,14 @@ export async function DELETE(request: Request) {
     if (!currentUser) return unauthorizedResponse();
 
     const payload = taskDeleteSchema.parse(await request.json());
+
+    if (currentUser.role === "Leader") {
+      const accessCtx = await getProjectAccessContext(payload.project_id);
+      if (!accessCtx || !canLeaderAccessProject(accessCtx.ownerTeam, accessCtx.collaboratorTeams, currentUser)) {
+        return forbiddenResponse("Proyek ini bukan milik tim Anda");
+      }
+    }
+
     const targetTask = await getTargetTask(payload.target_task_id, payload.project_id);
 
     if (!targetTask) {

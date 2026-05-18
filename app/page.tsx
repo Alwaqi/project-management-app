@@ -985,9 +985,10 @@ function DashboardView({
               return (
                 <div key={project.id} className="rounded-xl border border-border/60 bg-white/70 p-4">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
+                    <div className="min-w-0">
                       <p className="font-medium">{project.nama_proyek}</p>
-                      <p className="text-sm text-muted-foreground">
+                      <ProjectTeamBadges project={project} />
+                      <p className="mt-1 text-sm text-muted-foreground">
                         {project.total_tugas ?? tasks.filter((task) => task.project_id === project.id).length} dari{" "}
                         {getProjectTargetCount(project)} tugas target
                       </p>
@@ -1457,7 +1458,7 @@ function ProjectView({
       <PageHeader
         title="Manajemen Proyek"
         description="Buat, edit, dan tutup proyek tanpa spreadsheet manual."
-        action={activeUser.role === "Leader" ? <ProjectDialog users={users} onSubmit={onCreateProject} /> : null}
+        action={activeUser.role === "Leader" ? <ProjectDialog activeUser={activeUser} users={users} onSubmit={onCreateProject} /> : null}
       />
 
       <Card>
@@ -1493,6 +1494,7 @@ function ProjectView({
                     <TableCell className="min-w-72">
                       <div className="grid gap-2">
                         <p className="font-medium">{project.nama_proyek}</p>
+                        <ProjectTeamBadges project={project} />
                         {project.target_detail_tugas.length > 0 ? (
                           <>
                             <Button
@@ -1573,7 +1575,7 @@ function ProjectView({
                       <div className="flex justify-end gap-2">
                         {activeUser.role === "Leader" ? (
                           <>
-                            <ProjectDialog project={project} users={users} onSubmit={onUpdateProject} />
+                            <ProjectDialog activeUser={activeUser} project={project} users={users} onSubmit={onUpdateProject} />
                             <Button
                               type="button"
                               variant="outline"
@@ -1619,21 +1621,42 @@ function ProjectView({
 function ProjectDialog({
   project,
   users = [],
+  activeUser,
   onSubmit,
 }: {
   project?: Project;
   users?: User[];
+  activeUser: User;
   onSubmit: (project: Project) => void;
 }) {
+  const ownerTeam: TeamType = project?.owner_team ?? activeUser.team_type;
+  const otherTeams = teamTypeOptions.filter((team) => team !== ownerTeam);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(project?.nama_proyek ?? "");
   const [status, setStatus] = useState<ProjectStatus>(project?.status ?? "Berjalan");
+  const [collaboratorTeams, setCollaboratorTeams] = useState<TeamType[]>(
+    () => project?.collaborator_teams ?? [],
+  );
   const [targetRows, setTargetRows] = useState<TargetDraft[]>(() =>
     getInitialTargetRows(project),
   );
   const targetItems = useMemo(() => normalizeTargetRows(targetRows), [targetRows]);
   const targetCount = targetItems.length || project?.target_tugas || 0;
   const computedProjectDeadline = getProjectDeadlineFromTargets(targetItems) ?? project?.deadline ?? null;
+  const allowedTeams = useMemo<TeamType[]>(
+    () => [ownerTeam, ...collaboratorTeams],
+    [ownerTeam, collaboratorTeams],
+  );
+  const eligibleUsers = useMemo(
+    () => users.filter((candidate) => allowedTeams.includes(candidate.team_type)),
+    [allowedTeams, users],
+  );
+
+  const toggleCollaboratorTeam = (team: TeamType) => {
+    setCollaboratorTeams((prev) =>
+      prev.includes(team) ? prev.filter((t) => t !== team) : [...prev, team],
+    );
+  };
 
   const updateTargetRow = (id: string, values: Partial<TargetDraft>) => {
     setTargetRows((currentRows) =>
@@ -1659,11 +1682,14 @@ function ProjectDialog({
       })),
       deadline: computedProjectDeadline,
       dibuat_pada: project?.dibuat_pada ?? new Date().toISOString().slice(0, 10),
+      owner_team: ownerTeam,
+      collaborator_teams: collaboratorTeams,
     });
     setOpen(false);
     if (!project) {
       setName("");
       setStatus("Berjalan");
+      setCollaboratorTeams([]);
       setTargetRows([createEmptyTargetDraft()]);
     }
   };
@@ -1719,6 +1745,39 @@ function ProjectDialog({
               </div>
             </div>
           </div>
+
+          <div className="grid gap-2 rounded-xl border border-border/60 bg-white/70 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Label className="text-sm font-medium">Tim owner</Label>
+              <Badge variant="default" className="bg-indigo-600 text-white">
+                {ownerTeam}
+              </Badge>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Owner otomatis = tim Leader yang membuat. Pilih tim kolaborator jika project dikerjakan lintas-tim.
+            </p>
+            <div className="mt-1 flex flex-wrap gap-2">
+              {otherTeams.map((team) => {
+                const checked = collaboratorTeams.includes(team);
+                return (
+                  <button
+                    type="button"
+                    key={team}
+                    onClick={() => toggleCollaboratorTeam(team)}
+                    className={cn(
+                      "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                      checked
+                        ? "border-violet-300 bg-violet-100 text-violet-800"
+                        : "border-border/60 bg-white text-muted-foreground hover:bg-muted/50",
+                    )}
+                  >
+                    {checked ? "✓ " : "+ "}
+                    {team}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <div className="grid gap-3">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <Label>Detail target tugas</Label>
@@ -1763,13 +1822,18 @@ function ProjectDialog({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="unassigned">Belum ditugaskan</SelectItem>
-                        {users.map((user) => (
+                        {eligibleUsers.map((user) => (
                           <SelectItem key={user.id} value={user.id}>
                             {user.nama} - {user.team_type}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    {eligibleUsers.length === 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        Belum ada user pada tim owner/kolaborator. Tambah tim kolaborator dulu.
+                      </p>
+                    )}
                   </div>
                   <div className="grid gap-2">
                     <Label htmlFor={`target-start-${row.id}`}>Mulai</Label>
@@ -2247,6 +2311,25 @@ function KanbanView({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function ProjectTeamBadges({ project }: { project: Project }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      <Badge variant="default" className="bg-indigo-600 text-white text-[10px]">
+        Owner: {project.owner_team}
+      </Badge>
+      {project.collaborator_teams.map((team) => (
+        <Badge
+          key={team}
+          variant="outline"
+          className="border-violet-300 bg-violet-50 text-[10px] text-violet-800"
+        >
+          + {team}
+        </Badge>
+      ))}
     </div>
   );
 }
@@ -3087,6 +3170,7 @@ async function createProject(
           deadline: item.deadline,
         })),
         deadline: project.deadline,
+        collaborator_teams: project.collaborator_teams,
       }),
     });
     await refresh();
@@ -3117,6 +3201,7 @@ async function updateProject(
           deadline: item.deadline,
         })),
         deadline: project.deadline,
+        collaborator_teams: project.collaborator_teams,
       }),
     });
     await refresh();

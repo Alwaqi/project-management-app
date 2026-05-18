@@ -2,9 +2,11 @@ import { relations } from "drizzle-orm";
 import {
   boolean,
   date,
+  index,
   integer,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -102,9 +104,24 @@ export const project = pgTable("project", {
   status: projectStatusEnum("status").notNull().default("Berjalan"),
   targetTugas: integer("target_tugas").notNull().default(8),
   deadline: date("deadline", { mode: "string" }),
+  ownerTeam: teamTypeEnum("owner_team").notNull().default("Tim Admin"),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
 });
+
+export const projectCollaboratorTeam = pgTable(
+  "project_collaborator_team",
+  {
+    projectId: varchar("project_id", { length: 255 })
+      .notNull()
+      .references(() => project.id, { onDelete: "cascade" }),
+    teamType: teamTypeEnum("team_type").notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.projectId, table.teamType] }),
+    teamIdx: index("pct_team_idx").on(table.teamType),
+  }),
+);
 
 export const projectTargetTask = pgTable("project_target_task", {
   id: varchar("id", { length: 255 }).primaryKey(),
@@ -164,7 +181,18 @@ export const accountRelations = relations(account, ({ one }) => ({
 export const projectRelations = relations(project, ({ many }) => ({
   tasks: many(task),
   targetTasks: many(projectTargetTask),
+  collaboratorTeams: many(projectCollaboratorTeam),
 }));
+
+export const projectCollaboratorTeamRelations = relations(
+  projectCollaboratorTeam,
+  ({ one }) => ({
+    project: one(project, {
+      fields: [projectCollaboratorTeam.projectId],
+      references: [project.id],
+    }),
+  }),
+);
 
 export const projectTargetTaskRelations = relations(projectTargetTask, ({ one }) => ({
   project: one(project, {
@@ -199,11 +227,13 @@ export const schema = {
   verification,
   project,
   projectTargetTask,
+  projectCollaboratorTeam,
   task,
   userRelations,
   sessionRelations,
   accountRelations,
   projectRelations,
+  projectCollaboratorTeamRelations,
   projectTargetTaskRelations,
   taskRelations,
 };
@@ -216,5 +246,7 @@ export type ProjectRow = typeof project.$inferSelect;
 export type NewProject = typeof project.$inferInsert;
 export type ProjectTargetTaskRow = typeof projectTargetTask.$inferSelect;
 export type NewProjectTargetTask = typeof projectTargetTask.$inferInsert;
+export type ProjectCollaboratorTeamRow = typeof projectCollaboratorTeam.$inferSelect;
+export type NewProjectCollaboratorTeam = typeof projectCollaboratorTeam.$inferInsert;
 export type TaskRow = typeof task.$inferSelect;
 export type NewTask = typeof task.$inferInsert;

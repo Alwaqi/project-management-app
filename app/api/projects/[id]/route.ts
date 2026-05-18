@@ -1,11 +1,18 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
-import { project, projectTargetTask } from "@/lib/db/schema";
+import {
+  project,
+  projectCollaboratorTeam,
+  projectTargetTask,
+  user,
+} from "@/lib/db/schema";
 import {
   canAccessAssignedTarget,
+  canLeaderAccessProject,
   forbiddenResponse,
+  getProjectAccessContext,
   getRequestUser,
   unauthorizedResponse,
 } from "@/lib/api/authz";
@@ -13,6 +20,7 @@ import { sendTargetAssignmentEmails } from "@/lib/api/assignment-notifications";
 import { toProjectDto } from "@/lib/api/mappers";
 import { databaseUnavailableResponse, handleRouteError } from "@/lib/api/responses";
 import { projectUpdateSchema } from "@/lib/api/validation";
+import type { TeamType } from "@/lib/domain";
 
 export const runtime = "nodejs";
 
@@ -21,6 +29,14 @@ type RouteContext = {
     id: string;
   }>;
 };
+
+async function getCollaboratorTeams(projectId: string): Promise<TeamType[]> {
+  const rows = await db
+    .select({ teamType: projectCollaboratorTeam.teamType })
+    .from(projectCollaboratorTeam)
+    .where(eq(projectCollaboratorTeam.projectId, projectId));
+  return rows.map((row) => row.teamType);
+}
 
 export async function GET(request: Request, context: RouteContext) {
   const unavailable = databaseUnavailableResponse();
@@ -31,18 +47,23 @@ export async function GET(request: Request, context: RouteContext) {
     if (!currentUser) return unauthorizedResponse();
 
     const { id } = await context.params;
-    const [projectRow, targetTasks] = await Promise.all([
-      db.select().from(project).where(eq(project.id, id)).limit(1),
-      db
-        .select()
-        .from(projectTargetTask)
-        .where(eq(projectTargetTask.projectId, id))
-        .orderBy(asc(projectTargetTask.urutan)),
-    ]);
-
-    if (!projectRow[0]) {
+    const accessCtx = await getProjectAccessContext(id);
+    if (!accessCtx) {
       return NextResponse.json({ error: "Proyek tidak ditemukan" }, { status: 404 });
     }
+
+    if (
+      currentUser.role === "Leader" &&
+      !canLeaderAccessProject(accessCtx.ownerTeam, accessCtx.collaboratorTeams, currentUser)
+    ) {
+      return forbiddenResponse("Proyek ini bukan milik tim Anda");
+    }
+
+    const targetTasks = await db
+      .select()
+      .from(projectTargetTask)
+      .where(eq(projectTargetTask.projectId, id))
+      .orderBy(asc(projectTargetTask.urutan));
 
     const visibleTargetTasks =
       currentUser.role === "Leader"
@@ -56,7 +77,7 @@ export async function GET(request: Request, context: RouteContext) {
     }
 
     return NextResponse.json({
-      data: toProjectDto(projectRow[0], visibleTargetTasks),
+      data: toProjectDto(accessCtx.project, visibleTargetTasks, accessCtx.collaboratorTeams),
     });
   } catch (error) {
     return handleRouteError(error);
@@ -73,6 +94,14 @@ export async function PATCH(request: Request, context: RouteContext) {
     if (currentUser.role !== "Leader") return forbiddenResponse("Hanya Leader yang bisa mengubah proyek");
 
     const { id } = await context.params;
+    const accessCtx = await getProjectAccessContext(id);
+    if (!accessCtx) {
+      return NextResponse.json({ error: "Proyek tidak ditemukan" }, { status: 404 });
+    }
+    if (!canLeaderAccessProject(accessCtx.ownerTeam, accessCtx.collaboratorTeams, currentUser)) {
+      return forbiddenResponse("Proyek ini bukan milik tim Anda");
+    }
+
     const payload = projectUpdateSchema.parse(await request.json());
     const targetItems =
       "target_detail_tugas" in payload
@@ -80,20 +109,40 @@ export async function PATCH(request: Request, context: RouteContext) {
         : undefined;
     const projectDeadline =
       targetItems ? getProjectDeadline(targetItems) : payload.deadline ?? undefined;
-    const updatedProject = await db.transaction(async (tx) => {
-      const [existingProject] = await tx
-        .select()
-        .from(project)
-        .where(eq(project.id, id))
-        .limit(1);
+    const requestedCollaborators =
+      payload.collaborator_teams !== undefined
+        ? Array.from(
+            new Set(
+              payload.collaborator_teams.filter((team) => team !== accessCtx.ownerTeam),
+            ),
+          )
+        : undefined;
 
-      if (!existingProject) {
-        return {
-          project: null,
-          assignmentTargets: [],
-        };
+    if (targetItems && targetItems.length > 0) {
+      const assignedUserIds = targetItems
+        .map((item) => item.assignedUserId)
+        .filter((value): value is string => Boolean(value));
+
+      if (assignedUserIds.length > 0) {
+        const effectiveCollaborators = requestedCollaborators ?? accessCtx.collaboratorTeams;
+        const allowedTeams = [accessCtx.ownerTeam, ...effectiveCollaborators];
+        const userRows = await db
+          .select({ id: user.id, teamType: user.teamType })
+          .from(user)
+          .where(inArray(user.id, assignedUserIds));
+        const invalid = userRows.find((row) => !allowedTeams.includes(row.teamType));
+        if (invalid) {
+          return NextResponse.json(
+            {
+              error: "Ada user yang ditugaskan tidak berasal dari tim owner atau collaborator.",
+            },
+            { status: 400 },
+          );
+        }
       }
+    }
 
+    const updatedProject = await db.transaction(async (tx) => {
       await tx
         .update(project)
         .set({
@@ -113,6 +162,27 @@ export async function PATCH(request: Request, context: RouteContext) {
         .where(eq(project.id, id))
         .limit(1);
 
+      if (requestedCollaborators !== undefined) {
+        await tx
+          .delete(projectCollaboratorTeam)
+          .where(eq(projectCollaboratorTeam.projectId, id));
+        if (requestedCollaborators.length > 0) {
+          await tx.insert(projectCollaboratorTeam).values(
+            requestedCollaborators.map((teamType) => ({
+              projectId: id,
+              teamType,
+            })),
+          );
+        }
+      }
+
+      let assignmentTargets: Array<{
+        assignedUserId: string | null;
+        deskripsi: string;
+        mulai: string | null;
+        deadline: string | null;
+      }> = [];
+
       if (projectRow && targetItems) {
         const existingTargetTasks = await tx
           .select()
@@ -128,7 +198,7 @@ export async function PATCH(request: Request, context: RouteContext) {
             .filter((targetId): targetId is string => Boolean(targetId && existingTargetIds.has(targetId))),
         );
 
-        const assignmentTargets = targetItems
+        assignmentTargets = targetItems
           .filter((item) => {
             if (!item.assignedUserId) {
               return false;
@@ -181,16 +251,11 @@ export async function PATCH(request: Request, context: RouteContext) {
             });
           }),
         );
-
-        return {
-          project: projectRow,
-          assignmentTargets,
-        };
       }
 
       return {
         project: projectRow,
-        assignmentTargets: [],
+        assignmentTargets,
       };
     });
 
@@ -209,9 +274,10 @@ export async function PATCH(request: Request, context: RouteContext) {
       .from(projectTargetTask)
       .where(eq(projectTargetTask.projectId, id))
       .orderBy(asc(projectTargetTask.urutan));
+    const collaboratorTeams = await getCollaboratorTeams(id);
 
     return NextResponse.json({
-      data: toProjectDto(updatedProject.project, targetTasksForResponse),
+      data: toProjectDto(updatedProject.project, targetTasksForResponse, collaboratorTeams),
     });
   } catch (error) {
     return handleRouteError(error);
@@ -228,17 +294,19 @@ export async function DELETE(request: Request, context: RouteContext) {
     if (currentUser.role !== "Leader") return forbiddenResponse("Hanya Leader yang bisa menghapus proyek");
 
     const { id } = await context.params;
-    const [deletedProject] = await db.select().from(project).where(eq(project.id, id)).limit(1);
-
-    if (!deletedProject) {
+    const accessCtx = await getProjectAccessContext(id);
+    if (!accessCtx) {
       return NextResponse.json({ error: "Proyek tidak ditemukan" }, { status: 404 });
+    }
+    if (accessCtx.ownerTeam !== currentUser.team_type) {
+      return forbiddenResponse("Hanya Leader tim owner yang bisa menghapus proyek ini");
     }
 
     await db.delete(project).where(eq(project.id, id));
 
     return NextResponse.json({
       data: {
-        id: deletedProject.id,
+        id,
       },
     });
   } catch (error) {
