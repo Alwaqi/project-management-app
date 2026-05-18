@@ -19,6 +19,11 @@ function readEnv(name: string) {
 const authBaseURL =
   readEnv("BETTER_AUTH_URL") ?? readEnv("NEXT_PUBLIC_APP_URL") ?? "http://localhost:3000";
 
+const extraTrustedOrigins = (readEnv("BETTER_AUTH_TRUSTED_ORIGINS") ?? "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 const trustedOrigins = Array.from(
   new Set(
     [
@@ -26,6 +31,9 @@ const trustedOrigins = Array.from(
       readEnv("NEXT_PUBLIC_APP_URL"),
       "http://localhost:3000",
       "http://127.0.0.1:3000",
+      "https://protrack.zenithacademy.co.id",
+      "https://protrack-sdk.vercel.app",
+      ...extraTrustedOrigins,
     ].filter(Boolean) as string[],
   ),
 );
