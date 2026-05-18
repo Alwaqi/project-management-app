@@ -8,8 +8,14 @@ import {
   CalendarClock,
   CheckCircle2,
   ChevronDown,
+  ChartColumnIncreasing,
   ClipboardList,
+  Eye,
+  EyeOff,
+  Filter,
   FolderKanban,
+  Gauge,
+  Kanban,
   MailCheck,
   LayoutDashboard,
   ListChecks,
@@ -76,8 +82,8 @@ import {
 } from "@/lib/domain";
 import { cn } from "@/lib/utils";
 
-type View = "dashboard" | "projects" | "journal";
-type AuthMode = "login" | "register";
+type View = "dashboard" | "projects" | "kanban" | "journal";
+type AuthMode = "login" | "register" | "forgot" | "reset";
 
 type ProjectWithProgress = Project & {
   progress: number;
@@ -131,6 +137,7 @@ const statusVariant: Record<ProjectStatus, "secondary" | "success" | "warning"> 
 const navItems = [
   { id: "dashboard" as const, label: "Dasbor", icon: LayoutDashboard },
   { id: "projects" as const, label: "Proyek", icon: FolderKanban },
+  { id: "kanban" as const, label: "Kanban", icon: Kanban },
   { id: "journal" as const, label: "Tugas Harian", icon: ClipboardList },
 ];
 
@@ -173,9 +180,6 @@ export default function Home() {
 
         if (currentUser) {
           setActiveUser(currentUser);
-          setActiveView((currentView) =>
-            currentUser.role === "Tim" && currentView === "dashboard" ? "journal" : currentView,
-          );
         }
 
         return currentUser;
@@ -219,7 +223,7 @@ export default function Home() {
     authClient.$store.notify("$sessionSignal");
     await session.refetch({ query: { disableCookieCache: true } });
     const loggedInUser = await loadWorkspace(email);
-    setActiveView((loggedInUser?.role ?? "Tim") === "Leader" ? "dashboard" : "journal");
+    setActiveView(loggedInUser ? "dashboard" : "journal");
     showToast("Berhasil masuk ke ruang kerja.");
   };
 
@@ -242,6 +246,14 @@ export default function Home() {
     if (signUpError) {
       throw new Error(getAuthErrorMessage(signUpError.message));
     }
+  };
+
+  const handleRequestPasswordReset = async (email: string) => {
+    await requestPasswordReset(email);
+  };
+
+  const handleResetPassword = async (token: string, newPassword: string) => {
+    await resetPassword(token, newPassword);
   };
 
   const handleLogout = async () => {
@@ -268,11 +280,18 @@ export default function Home() {
   }
 
   if (!activeUser) {
-    return <LoginScreen onLogin={handleLogin} onRegister={handleRegister} />;
+    return (
+      <LoginScreen
+        onLogin={handleLogin}
+        onRegister={handleRegister}
+        onRequestPasswordReset={handleRequestPasswordReset}
+        onResetPassword={handleResetPassword}
+      />
+    );
   }
 
   return (
-    <main className="min-h-screen w-full overflow-x-hidden bg-background">
+    <main className="min-h-screen w-full bg-background">
       <div className="flex min-h-screen w-full flex-col lg:flex-row">
         <aside className="w-full border-b bg-card lg:sticky lg:top-0 lg:h-screen lg:w-72 lg:shrink-0 lg:border-b-0 lg:border-r">
           <div className="flex h-full min-w-0 flex-col gap-4 p-3 sm:gap-6 sm:p-4">
@@ -292,10 +311,9 @@ export default function Home() {
               </div>
             </div>
 
-            <nav className="grid grid-cols-3 gap-2 lg:grid-cols-1">
+            <nav className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-1">
               {navItems.map((item) => {
                 const Icon = item.icon;
-                const isDisabled = activeUser.role === "Tim" && item.id === "dashboard";
 
                 return (
                   <Button
@@ -303,9 +321,8 @@ export default function Home() {
                     type="button"
                     variant={activeView === item.id ? "secondary" : "ghost"}
                     className="h-auto min-h-10 justify-center gap-2 px-2 text-xs sm:text-sm lg:justify-start"
-                    disabled={isDisabled}
                     onClick={() => setActiveView(item.id)}
-                    title={isDisabled ? "Khusus Leader" : item.label}
+                    title={item.label}
                   >
                     <Icon className="h-4 w-4" aria-hidden="true" />
                     <span className="truncate">{item.label}</span>
@@ -347,6 +364,7 @@ export default function Home() {
               projects={projects}
               tasks={tasks}
               users={users}
+              activeUser={activeUser}
               summary={dashboardSummary}
               isLoading={isLoadingData}
             />
@@ -368,6 +386,17 @@ export default function Home() {
               }}
               onDeleteProject={(project) => {
                 void deleteProject(project, loadWorkspace, showToast);
+              }}
+            />
+          )}
+          {activeView === "kanban" && (
+            <KanbanView
+              activeUser={activeUser}
+              projects={projects}
+              tasks={tasks}
+              users={users}
+              onUpdateTaskStatus={(projectId, targetTaskId, status) => {
+                void updateTaskStatus(projectId, targetTaskId, status, loadWorkspace, showToast);
               }}
             />
           )}
@@ -398,6 +427,8 @@ export default function Home() {
 function LoginScreen({
   onLogin,
   onRegister,
+  onRequestPasswordReset,
+  onResetPassword,
 }: {
   onLogin: (email: string, password: string) => Promise<void>;
   onRegister: (
@@ -407,16 +438,30 @@ function LoginScreen({
     role: Role,
     teamType: TeamType,
   ) => Promise<void>;
+  onRequestPasswordReset: (email: string) => Promise<void>;
+  onResetPassword: (token: string, newPassword: string) => Promise<void>;
 }) {
-  const [mode, setMode] = useState<AuthMode>("login");
+  const [mode, setMode] = useState<AuthMode>(() =>
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("reset_token")
+      ? "reset"
+      : "login",
+  );
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(() =>
+    typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("email") ?? "" : "",
+  );
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [resetToken, setResetToken] = useState(() =>
+    typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("reset_token") ?? "" : "",
+  );
   const [role, setRole] = useState<Role>("Tim");
   const [teamType, setTeamType] = useState<TeamType>("Tim Sales");
   const [notice, setNotice] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -425,7 +470,30 @@ function LoginScreen({
     setIsSubmitting(true);
 
     try {
-      if (mode === "register") {
+      if (mode === "reset") {
+        if (!resetToken) {
+          throw new Error("Token reset password tidak ditemukan. Minta link reset baru.");
+        }
+
+        if (password !== confirmPassword) {
+          throw new Error("Konfirmasi password belum sama.");
+        }
+
+        await onResetPassword(resetToken, password);
+        setMode("login");
+        setPassword("");
+        setConfirmPassword("");
+        setResetToken("");
+        setNotice("Password baru berhasil disimpan. Silakan masuk dengan password baru.");
+
+        if (typeof window !== "undefined") {
+          window.history.replaceState(null, "", window.location.pathname);
+        }
+      } else if (mode === "forgot") {
+        await onRequestPasswordReset(email);
+        setMode("login");
+        setNotice("Jika email terdaftar, link reset password sudah dikirim.");
+      } else if (mode === "register") {
         await onRegister(name, email, password, role, teamType);
         setMode("login");
         setPassword("");
@@ -455,19 +523,25 @@ function LoginScreen({
           </div>
           <CardTitle className="text-xl">Masuk ke ProTrack SDK</CardTitle>
           <CardDescription>
-            Daftar memakai email aktif, verifikasi lewat link email, lalu masuk ke ruang kerja tim.
+            {mode === "forgot"
+              ? "Masukkan email aktif untuk menerima link reset password."
+              : mode === "reset"
+                ? "Buat password baru untuk akun ProTrack SDK Anda."
+                : "Daftar memakai email aktif, verifikasi lewat link email, lalu masuk ke ruang kerja tim."}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="mb-4 grid grid-cols-2 gap-2 rounded-md bg-muted p-1">
             <Button
               type="button"
-              variant={mode === "login" ? "secondary" : "ghost"}
+              variant={mode === "login" || mode === "forgot" || mode === "reset" ? "secondary" : "ghost"}
               size="sm"
               onClick={() => {
                 setMode("login");
                 setError("");
                 setNotice("");
+                setPassword("");
+                setConfirmPassword("");
               }}
             >
               Masuk
@@ -480,6 +554,8 @@ function LoginScreen({
                 setMode("register");
                 setError("");
                 setNotice("");
+                setPassword("");
+                setConfirmPassword("");
               }}
             >
               Daftar
@@ -499,33 +575,44 @@ function LoginScreen({
                 />
               </div>
             )}
-            <div className="grid gap-2">
-              <Label htmlFor="email">Email aktif</Label>
-              <Input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                autoCapitalize="none"
-                spellCheck={false}
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                required
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
+            {mode !== "reset" && (
+              <div className="grid gap-2">
+                <Label htmlFor="email">Email aktif</Label>
+                <Input
+                  id="email"
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  required
+                />
+              </div>
+            )}
+            {mode !== "forgot" && (
+              <PasswordField
                 id="password"
-                name="password"
-                type="password"
-                autoComplete={mode === "register" ? "new-password" : "current-password"}
-                minLength={8}
+                label={mode === "reset" ? "Password baru" : "Password"}
+                autoComplete={mode === "login" ? "current-password" : "new-password"}
                 value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                required
+                onChange={setPassword}
+                showPassword={showPassword}
+                onToggleShowPassword={() => setShowPassword((currentValue) => !currentValue)}
               />
-            </div>
+            )}
+            {mode === "reset" && (
+              <PasswordField
+                id="confirm-password"
+                label="Konfirmasi password baru"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={setConfirmPassword}
+                showPassword={showConfirmPassword}
+                onToggleShowPassword={() => setShowConfirmPassword((currentValue) => !currentValue)}
+              />
+            )}
             {mode === "register" && (
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="grid gap-2">
@@ -569,8 +656,32 @@ function LoginScreen({
             )}
             <Button type="submit" className="gap-2" disabled={isSubmitting}>
               <MailCheck className="h-4 w-4" aria-hidden="true" />
-              {isSubmitting ? "Memproses..." : mode === "register" ? "Daftar" : "Masuk"}
+              {isSubmitting
+                ? "Memproses..."
+                : mode === "register"
+                  ? "Daftar"
+                  : mode === "forgot"
+                    ? "Kirim Link Reset"
+                    : mode === "reset"
+                      ? "Simpan Password Baru"
+                      : "Masuk"}
             </Button>
+            {mode === "login" && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="justify-self-center"
+                onClick={() => {
+                  setMode("forgot");
+                  setError("");
+                  setNotice("");
+                  setPassword("");
+                }}
+              >
+                Lupa password?
+              </Button>
+            )}
           </form>
           <div className="mt-5 grid gap-2 rounded-md border bg-muted/45 p-3 text-xs text-muted-foreground">
             <p>Akun baru aktif setelah link verifikasi email diklik.</p>
@@ -595,16 +706,70 @@ function LoadingScreen({ message }: { message: string }) {
   );
 }
 
+function PasswordField({
+  id,
+  label,
+  autoComplete,
+  value,
+  onChange,
+  showPassword,
+  onToggleShowPassword,
+}: {
+  id: string;
+  label: string;
+  autoComplete: string;
+  value: string;
+  onChange: (value: string) => void;
+  showPassword: boolean;
+  onToggleShowPassword: () => void;
+}) {
+  return (
+    <div className="grid gap-2">
+      <Label htmlFor={id}>{label}</Label>
+      <div className="relative">
+        <Input
+          id={id}
+          name={id}
+          type={showPassword ? "text" : "password"}
+          autoComplete={autoComplete}
+          minLength={8}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="pr-11"
+          required
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 p-0"
+          onClick={onToggleShowPassword}
+          aria-label={showPassword ? "Sembunyikan password" : "Tampilkan password"}
+          title={showPassword ? "Sembunyikan password" : "Tampilkan password"}
+        >
+          {showPassword ? (
+            <EyeOff className="h-4 w-4" aria-hidden="true" />
+          ) : (
+            <Eye className="h-4 w-4" aria-hidden="true" />
+          )}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function DashboardView({
   projects,
   tasks,
   users,
+  activeUser,
   summary,
   isLoading,
 }: {
   projects: ProjectWithProgress[];
   tasks: Task[];
   users: User[];
+  activeUser: User;
   summary: DashboardSummary | null;
   isLoading: boolean;
 }) {
@@ -672,6 +837,23 @@ function DashboardView({
         <MetricCard label="Proyek Overdue" value={metrics?.proyek_overdue ?? overdueProjects.length} icon={AlertTriangle} />
         <MetricCard label="Deadline 7 Hari" value={metrics?.deadline_minggu_ini ?? dueSoonProjects.length} icon={CalendarClock} />
       </div>
+
+      {activeUser.role === "Tim" && (
+        <TeamKpiChart
+          activeUser={activeUser}
+          projects={projects}
+          tasks={tasks}
+          today={today}
+        />
+      )}
+
+      <GanttChart
+        activeUser={activeUser}
+        projects={projects}
+        tasks={tasks}
+        users={users}
+        today={today}
+      />
 
       <div className="grid min-w-0 gap-4 sm:gap-6 xl:grid-cols-[1fr_1.15fr]">
         <DeadlineRiskChart
@@ -811,6 +993,401 @@ function DashboardView({
           </CardContent>
         </Card>
       </div>
+    </div>
+  );
+}
+
+function TeamKpiChart({
+  activeUser,
+  projects,
+  tasks,
+  today,
+}: {
+  activeUser: User;
+  projects: ProjectWithProgress[];
+  tasks: Task[];
+  today: string;
+}) {
+  const assignedTargets = projects.flatMap((project) =>
+    getAssignedTargetDetails(project, activeUser).map((target) => ({
+      project,
+      target,
+    })),
+  );
+  const completedTargetIds = getCompletedTargetIds(tasks);
+  const totalTargets = assignedTargets.length;
+  const completedTargets = assignedTargets.filter(({ target }) =>
+    isTargetCompleted(target, completedTargetIds),
+  ).length;
+  const activeTargets = assignedTargets.filter(({ target }) =>
+    ["Dikerjakan", "Koreksi"].includes(getEffectiveTargetStatus(target, completedTargetIds)),
+  ).length;
+  const overdueTargets = assignedTargets.filter(
+    ({ target }) =>
+      !isTargetCompleted(target, completedTargetIds) &&
+      Boolean(target.deadline && target.deadline < today),
+  ).length;
+  const completionRate = totalTargets ? Math.round((completedTargets / totalTargets) * 100) : 0;
+  const statusRows = targetStatusColumns.map((status) => {
+    const value = assignedTargets.filter(
+      ({ target }) => getEffectiveTargetStatus(target, completedTargetIds) === status,
+    ).length;
+
+    return {
+      status,
+      value,
+      percent: totalTargets ? Math.round((value / totalTargets) * 100) : 0,
+    };
+  });
+  const nextDeadlines = assignedTargets
+    .filter(({ target }) => !isTargetCompleted(target, completedTargetIds) && target.deadline)
+    .sort((first, second) => (first.target.deadline ?? "").localeCompare(second.target.deadline ?? ""))
+    .slice(0, 3);
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <CardTitle>KPI Tim Saya</CardTitle>
+            <CardDescription>Progress target yang ditugaskan ke akun Anda.</CardDescription>
+          </div>
+          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-muted">
+            <Gauge className="h-5 w-5 text-primary" aria-hidden="true" />
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+          <div className="rounded-lg border p-4">
+            <p className="text-sm text-muted-foreground">Rasio selesai</p>
+            <div className="mt-3 flex items-end gap-3">
+              <p className="text-3xl font-semibold">{completionRate}%</p>
+              <p className="pb-1 text-sm text-muted-foreground">
+                {completedTargets}/{totalTargets || 0} target
+              </p>
+            </div>
+            <Progress value={completionRate} className="mt-4" />
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <KpiMiniCard label="Aktif" value={activeTargets} />
+            <KpiMiniCard label="Selesai" value={completedTargets} />
+            <KpiMiniCard label="Overdue" value={overdueTargets} tone="danger" />
+          </div>
+        </div>
+        <div className="grid gap-4">
+          <div className="grid gap-3">
+            {statusRows.map((row) => (
+              <div key={row.status} className="grid gap-2">
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="font-medium">{row.status}</span>
+                  <span className="text-muted-foreground">
+                    {row.value} target - {row.percent}%
+                  </span>
+                </div>
+                <div className="h-3 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className={cn("h-full rounded-full", targetStatusBarClass[row.status])}
+                    style={{ width: `${row.percent}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="grid gap-2">
+            <p className="text-sm font-medium">Deadline terdekat</p>
+            {nextDeadlines.length > 0 ? (
+              nextDeadlines.map(({ project, target }) => (
+                <div key={target.id} className="flex flex-col gap-1 rounded-md border p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{target.deskripsi}</p>
+                    <p className="text-xs text-muted-foreground">{project.nama_proyek}</p>
+                  </div>
+                  <Badge variant={target.deadline && target.deadline < today ? "warning" : "outline"}>
+                    {target.deadline ? formatDate(target.deadline) : "Tanpa deadline"}
+                  </Badge>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                Belum ada target aktif dengan deadline.
+              </div>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function KpiMiniCard({
+  label,
+  value,
+  tone = "default",
+}: {
+  label: string;
+  value: number;
+  tone?: "default" | "danger";
+}) {
+  return (
+    <div className={cn("rounded-lg border p-3", tone === "danger" && "border-red-200 bg-red-50")}>
+      <p className={cn("text-xs text-muted-foreground", tone === "danger" && "text-red-700")}>
+        {label}
+      </p>
+      <p className={cn("mt-1 text-xl font-semibold", tone === "danger" && "text-red-700")}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function GanttChart({
+  activeUser,
+  projects,
+  tasks,
+  users,
+  today,
+}: {
+  activeUser: User;
+  projects: ProjectWithProgress[];
+  tasks: Task[];
+  users: User[];
+  today: string;
+}) {
+  const [selectedProjectId, setSelectedProjectId] = useState("all");
+  const [expandedTargetIds, setExpandedTargetIds] = useState<Set<string>>(new Set());
+  const completedTargetIds = getCompletedTargetIds(tasks);
+  const visibleProjects = projects.filter((project) => getAssignedTargetDetails(project, activeUser).length > 0);
+  const filteredProjects =
+    selectedProjectId === "all"
+      ? visibleProjects
+      : visibleProjects.filter((project) => project.id === selectedProjectId);
+  useEffect(() => {
+    if (selectedProjectId !== "all" && !visibleProjects.some((project) => project.id === selectedProjectId)) {
+      setSelectedProjectId("all");
+    }
+  }, [selectedProjectId, visibleProjects]);
+  const ganttItems = filteredProjects
+    .flatMap((project) =>
+      getAssignedTargetDetails(project, activeUser).map((target) => {
+        const start = target.mulai ?? project.dibuat_pada;
+        const end = target.deadline ?? project.deadline ?? start;
+
+        return {
+          id: target.id,
+          project,
+          target,
+          start,
+          end: end < start ? start : end,
+          status: getEffectiveTargetStatus(target, completedTargetIds),
+          isCompleted: isTargetCompleted(target, completedTargetIds),
+        };
+      }),
+    )
+    .filter((item) => isDateKey(item.start) && isDateKey(item.end))
+    .sort((first, second) => first.start.localeCompare(second.start));
+  const totalTargets = ganttItems.length;
+  const completedTargets = ganttItems.filter((item) => item.isCompleted).length;
+  const overdueTargets = ganttItems.filter(
+    (item) => !item.isCompleted && Boolean(item.target.deadline && item.target.deadline < today),
+  ).length;
+  const completionRate = totalTargets ? Math.round((completedTargets / totalTargets) * 100) : 0;
+  const minDate = ganttItems[0]?.start ?? today;
+  const maxDate =
+    ganttItems.map((item) => item.end).sort().at(-1) ??
+    ganttItems.map((item) => item.start).sort().at(-1) ??
+    today;
+  const totalDays = Math.max(1, getDateDistance(minDate, maxDate) + 1);
+  const todayOffset =
+    today >= minDate && today <= maxDate
+      ? Math.min(100, Math.max(0, (getDateDistance(minDate, today) / totalDays) * 100))
+      : null;
+  const ticks = getGanttTicks(minDate, maxDate);
+  const toggleTargetExpansion = (targetId: string) => {
+    setExpandedTargetIds((currentIds) => {
+      const nextIds = new Set(currentIds);
+
+      if (nextIds.has(targetId)) {
+        nextIds.delete(targetId);
+      } else {
+        nextIds.add(targetId);
+      }
+
+      return nextIds;
+    });
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <CardTitle>Gantt Detail Tugas</CardTitle>
+            <CardDescription>Timeline detail tugas dengan filter proyek dan ringkasan progres.</CardDescription>
+          </div>
+          <div className="grid gap-2 sm:min-w-72">
+            <Label className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Filter className="h-3.5 w-3.5" aria-hidden="true" />
+              Filter proyek
+            </Label>
+            <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Pilih proyek" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua proyek</SelectItem>
+                {visibleProjects.map((project) => (
+                  <SelectItem key={project.id} value={project.id}>
+                    {project.nama_proyek}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-5">
+        <div className="grid gap-3 sm:grid-cols-4">
+          <GanttSummaryCard label="Detail tugas" value={totalTargets} />
+          <GanttSummaryCard label="Selesai" value={completedTargets} tone="success" />
+          <GanttSummaryCard label="Overdue" value={overdueTargets} tone="danger" />
+          <GanttSummaryCard label="Progress" value={`${completionRate}%`} />
+        </div>
+        {ganttItems.length > 0 ? (
+          <div className="w-full overflow-x-auto">
+            <div className="min-w-[860px]">
+              <div className="grid grid-cols-[20rem_1fr] gap-3 border-b pb-3 text-xs font-medium text-muted-foreground">
+                <span>Detail tugas</span>
+                <div className="relative h-6">
+                  {ticks.map((tick) => (
+                    <span
+                      key={tick.date}
+                      className="absolute top-0 -translate-x-1/2 whitespace-nowrap"
+                      style={{ left: `${tick.offset}%` }}
+                    >
+                      {formatShortDate(tick.date)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div className="grid gap-3 pt-3">
+                {ganttItems.map((item) => {
+                  const left = (getDateDistance(minDate, item.start) / totalDays) * 100;
+                  const width = Math.max(2, ((getDateDistance(item.start, item.end) + 1) / totalDays) * 100);
+                  const isExpanded = expandedTargetIds.has(item.id);
+
+                  return (
+                    <div key={item.id} className="grid grid-cols-[20rem_1fr] items-start gap-3 rounded-lg border bg-background p-3">
+                      <div className="min-w-0">
+                        <button
+                          type="button"
+                          className="flex w-full min-w-0 items-start gap-2 text-left"
+                          onClick={() => toggleTargetExpansion(item.id)}
+                        >
+                          <ChevronDown
+                            className={cn(
+                              "mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+                              isExpanded && "rotate-180",
+                            )}
+                            aria-hidden="true"
+                          />
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-medium">{item.target.deskripsi}</span>
+                            <span className="mt-1 block truncate text-xs text-muted-foreground">
+                              {item.project.nama_proyek}
+                            </span>
+                          </span>
+                        </button>
+                        {isExpanded && (
+                          <div className="ml-6 mt-3 grid gap-2 text-xs text-muted-foreground">
+                            <span>PIC: {getAssignedUserName(item.target.assigned_user_id, users)}</span>
+                            <span>Jadwal: {formatTargetSchedule(item.target)}</span>
+                            <span>Durasi rencana: {getTaskPlannedDuration(item.target) ?? "-"} hari</span>
+                            <span>Status: {item.status}</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="relative h-16 rounded-md bg-muted/70">
+                        {todayOffset !== null && (
+                          <span
+                            className="absolute top-0 h-full w-px bg-red-500"
+                            style={{ left: `${todayOffset}%` }}
+                            aria-hidden="true"
+                          />
+                        )}
+                        <div
+                          className={cn(
+                            "absolute top-3 h-10 rounded-md px-2 text-xs font-medium text-white",
+                            ganttStatusClass[item.status],
+                          )}
+                          style={{ left: `${left}%`, width: `${Math.min(width, 100 - left)}%` }}
+                          title={`${formatDate(item.start)} - ${formatDate(item.end)}`}
+                        >
+                          <span className="flex h-full flex-col justify-center overflow-hidden">
+                            <span className="truncate">{item.status}</span>
+                            <span className="truncate font-normal opacity-90">
+                              {formatShortDate(item.start)} - {formatShortDate(item.end)}
+                            </span>
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {todayOffset !== null && (
+                <div className="mt-3 grid grid-cols-[20rem_1fr] gap-3 text-xs text-muted-foreground">
+                  <span />
+                  <span>Garis merah menandai hari ini.</span>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+            Belum ada detail tugas bertanggal untuk filter ini.
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function GanttSummaryCard({
+  label,
+  value,
+  tone = "default",
+}: {
+  label: string;
+  value: string | number;
+  tone?: "default" | "success" | "danger";
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-lg border p-3",
+        tone === "success" && "border-emerald-200 bg-emerald-50",
+        tone === "danger" && "border-red-200 bg-red-50",
+      )}
+    >
+      <p
+        className={cn(
+          "text-xs text-muted-foreground",
+          tone === "success" && "text-emerald-700",
+          tone === "danger" && "text-red-700",
+        )}
+      >
+        {label}
+      </p>
+      <p
+        className={cn(
+          "mt-1 text-xl font-semibold",
+          tone === "success" && "text-emerald-700",
+          tone === "danger" && "text-red-700",
+        )}
+      >
+        {value}
+      </p>
     </div>
   );
 }
@@ -1258,10 +1835,8 @@ function JournalView({
     }
   }, [selectableProjects, selectedProject]);
   const selectedProjectData = selectableProjects.find((project) => project.id === selectedProject);
-  const completedTargetIds = new Set(
-    tasks
-      .filter((task) => task.project_id === selectedProject && task.target_task_id)
-      .map((task) => task.target_task_id),
+  const completedTargetIds = getCompletedTargetIds(
+    tasks.filter((task) => task.project_id === selectedProject),
   );
   const visibleTargetDetails = selectedProjectData
     ? getVisibleTargetDetails(selectedProjectData, activeUser)
@@ -1415,6 +1990,162 @@ function JournalView({
   );
 }
 
+function KanbanView({
+  activeUser,
+  projects,
+  tasks,
+  users,
+  onUpdateTaskStatus,
+}: {
+  activeUser: User;
+  projects: ProjectWithProgress[];
+  tasks: Task[];
+  users: User[];
+  onUpdateTaskStatus: (
+    projectId: string,
+    targetTaskId: string,
+    status: TargetTaskStatus,
+  ) => void;
+}) {
+  const today = getLocalDateKey();
+  const [selectedProjectId, setSelectedProjectId] = useState("all");
+  const completedTargetIds = getCompletedTargetIds(tasks);
+  const visibleProjects = projects.filter((project) => getKanbanTargetDetails(project, activeUser).length > 0);
+  const filteredProjects =
+    selectedProjectId === "all"
+      ? visibleProjects
+      : visibleProjects.filter((project) => project.id === selectedProjectId);
+  useEffect(() => {
+    if (selectedProjectId !== "all" && !visibleProjects.some((project) => project.id === selectedProjectId)) {
+      setSelectedProjectId("all");
+    }
+  }, [selectedProjectId, visibleProjects]);
+  const kanbanItems = filteredProjects
+    .flatMap((project) =>
+      getKanbanTargetDetails(project, activeUser).map((target) => ({
+        project,
+        target,
+        status: getEffectiveTargetStatus(target, completedTargetIds),
+        isCompleted: isTargetCompleted(target, completedTargetIds),
+      })),
+    )
+    .sort((first, second) => {
+      const firstDeadline = first.target.deadline ?? first.project.deadline ?? "9999-12-31";
+      const secondDeadline = second.target.deadline ?? second.project.deadline ?? "9999-12-31";
+
+      return firstDeadline.localeCompare(secondDeadline);
+    });
+  const itemsByStatus = new Map(
+    targetStatusColumns.map((status) => [
+      status,
+      kanbanItems.filter((item) => item.status === status),
+    ]),
+  );
+
+  return (
+    <div className="grid gap-6">
+      <PageHeader
+        title="Kanban Tugas"
+        description={
+          activeUser.role === "Leader"
+            ? "Pantau semua target tugas berdasarkan status pengerjaan."
+            : "Pantau target tugas yang ditugaskan ke akun Anda."
+        }
+        action={
+          <div className="grid gap-2 sm:min-w-72">
+            <Label className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Filter className="h-3.5 w-3.5" aria-hidden="true" />
+              Filter proyek
+            </Label>
+            <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Pilih proyek" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua proyek</SelectItem>
+                {visibleProjects.map((project) => (
+                  <SelectItem key={project.id} value={project.id}>
+                    {project.nama_proyek}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        }
+      />
+
+      <div className="grid min-w-0 gap-4 xl:grid-cols-4">
+        {targetStatusColumns.map((status) => {
+          const items = itemsByStatus.get(status) ?? [];
+
+          return (
+            <Card key={status} className="h-fit">
+              <CardHeader className="space-y-0 pb-3">
+                <div className="flex items-center justify-between gap-3">
+                  <CardTitle className="text-sm">{status}</CardTitle>
+                  <Badge variant={status === "Selesai" ? "success" : status === "Koreksi" ? "warning" : "secondary"}>
+                    {items.length}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="grid gap-3">
+                {items.length > 0 ? (
+                  items.map(({ project, target, isCompleted }) => (
+                    <div key={target.id} className="grid gap-3 rounded-lg border bg-background p-3">
+                      <div className="grid gap-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className={cn("text-sm font-medium", isCompleted && "line-through")}>
+                            {target.deskripsi}
+                          </p>
+                          <TargetStatusBadge
+                            target={target}
+                            today={today}
+                            isCompleted={isCompleted}
+                          />
+                        </div>
+                        <p className="text-xs text-muted-foreground">{project.nama_proyek}</p>
+                        <p className="text-xs text-muted-foreground">
+                          PIC: {getAssignedUserName(target.assigned_user_id, users)}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                        <Badge variant="outline">{formatTargetSchedule(target)}</Badge>
+                        {getTaskPlannedDuration(target) ? (
+                          <Badge variant="outline">{getTaskPlannedDuration(target)} hari</Badge>
+                        ) : null}
+                      </div>
+                      <Select
+                        value={getEffectiveTargetStatus(target, completedTargetIds)}
+                        onValueChange={(value) =>
+                          onUpdateTaskStatus(project.id, target.id, value as TargetTaskStatus)
+                        }
+                      >
+                        <SelectTrigger className="bg-card">
+                          <SelectValue placeholder="Pilih status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Belum Mulai">Belum mulai</SelectItem>
+                          <SelectItem value="Dikerjakan">Dikerjakan</SelectItem>
+                          <SelectItem value="Koreksi">Koreksi</SelectItem>
+                          <SelectItem value="Selesai">Selesai</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                    Tidak ada tugas.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function PageHeader({
   title,
   description,
@@ -1458,6 +2189,27 @@ function MetricCard({
     </Card>
   );
 }
+
+const targetStatusColumns: TargetTaskStatus[] = [
+  "Belum Mulai",
+  "Dikerjakan",
+  "Koreksi",
+  "Selesai",
+];
+
+const targetStatusBarClass: Record<TargetTaskStatus, string> = {
+  "Belum Mulai": "bg-slate-400",
+  Dikerjakan: "bg-blue-500",
+  Koreksi: "bg-amber-500",
+  Selesai: "bg-emerald-500",
+};
+
+const ganttStatusClass: Record<TargetTaskStatus, string> = {
+  "Belum Mulai": "bg-slate-500",
+  Dikerjakan: "bg-blue-600",
+  Koreksi: "bg-amber-500 text-amber-950",
+  Selesai: "bg-emerald-600",
+};
 
 function DeadlineRiskChart({
   overdueCount,
@@ -1649,13 +2401,40 @@ function TargetStatusBadge({
 
 function getEffectiveTargetStatus(
   target: Project["target_detail_tugas"][number],
-  completedTargetIds: Set<string | null>,
+  completedTargetIds: Set<string>,
 ): TargetTaskStatus {
   if (completedTargetIds.has(target.id)) {
     return "Selesai";
   }
 
   return target.status;
+}
+
+function getCompletedTargetIds(tasks: Task[]) {
+  return new Set(
+    tasks
+      .map((task) => task.target_task_id)
+      .filter((targetTaskId): targetTaskId is string => Boolean(targetTaskId)),
+  );
+}
+
+function isTargetCompleted(
+  target: Project["target_detail_tugas"][number],
+  completedTargetIds: Set<string>,
+) {
+  return target.status === "Selesai" || completedTargetIds.has(target.id);
+}
+
+function getAssignedTargetDetails(project: Project, activeUser: User) {
+  if (activeUser.role === "Leader") {
+    return project.target_detail_tugas;
+  }
+
+  return project.target_detail_tugas.filter((target) => target.assigned_user_id === activeUser.id);
+}
+
+function getKanbanTargetDetails(project: Project, activeUser: User) {
+  return getAssignedTargetDetails(project, activeUser);
 }
 
 function getAssignedUserName(userId: string | null, users: User[]) {
@@ -1670,6 +2449,49 @@ function getVisibleTargetDetails(project: Project, activeUser: User) {
   return project.target_detail_tugas.filter(
     (target) => !target.assigned_user_id || target.assigned_user_id === activeUser.id,
   );
+}
+
+function isDateKey(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function getDateDistance(startDate: string, endDate: string) {
+  const start = new Date(`${startDate}T00:00:00`);
+  const end = new Date(`${endDate}T00:00:00`);
+
+  return Math.ceil((end.getTime() - start.getTime()) / 86_400_000);
+}
+
+function addDays(date: string, days: number) {
+  const nextDate = new Date(`${date}T00:00:00`);
+  nextDate.setDate(nextDate.getDate() + days);
+
+  return nextDate.toISOString().slice(0, 10);
+}
+
+function getGanttTicks(startDate: string, endDate: string) {
+  const totalDays = Math.max(1, getDateDistance(startDate, endDate) + 1);
+  const tickCount = Math.min(5, totalDays);
+
+  if (tickCount <= 1) {
+    return [{ date: startDate, offset: 0 }];
+  }
+
+  return Array.from({ length: tickCount }, (_, index) => {
+    const dayOffset = Math.round(((totalDays - 1) / (tickCount - 1)) * index);
+
+    return {
+      date: addDays(startDate, dayOffset),
+      offset: (dayOffset / totalDays) * 100,
+    };
+  });
+}
+
+function formatShortDate(date: string) {
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "2-digit",
+    month: "short",
+  }).format(new Date(date));
 }
 
 function ActivityItem({
@@ -2010,6 +2832,42 @@ async function updateTaskStatus(
     showToast(`Status tugas diubah menjadi ${status}.`);
   } catch (error) {
     showToast(getErrorMessage(error));
+  }
+}
+
+async function requestPasswordReset(email: string) {
+  const response = await fetch("/api/auth/request-password-reset", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      email,
+      redirectTo: "/",
+    }),
+  });
+  const payload = (await response.json().catch(() => ({}))) as { error?: string; message?: string };
+
+  if (!response.ok) {
+    throw new Error(payload.error ?? payload.message ?? "Gagal mengirim link reset password");
+  }
+}
+
+async function resetPassword(token: string, newPassword: string) {
+  const response = await fetch("/api/auth/reset-password", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      token,
+      newPassword,
+    }),
+  });
+  const payload = (await response.json().catch(() => ({}))) as { error?: string; message?: string };
+
+  if (!response.ok) {
+    throw new Error(payload.error ?? payload.message ?? "Gagal menyimpan password baru");
   }
 }
 

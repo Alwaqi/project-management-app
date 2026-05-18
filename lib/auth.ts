@@ -43,6 +43,40 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: true,
+    resetPasswordTokenExpiresIn: 60 * 60,
+    revokeSessionsOnPasswordReset: true,
+    sendResetPassword: async ({ user, token }) => {
+      const resetUrl = new URL(authBaseURL);
+      resetUrl.searchParams.set("reset_token", token);
+      resetUrl.searchParams.set("email", user.email);
+
+      const result = await sendEmail({
+        to: user.email,
+        subject: "Reset password ProTrack SDK",
+        html: `
+          <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111827;">
+            <h2 style="margin: 0 0 12px;">Reset password Anda</h2>
+            <p>Halo ${user.name}, klik tombol di bawah ini untuk membuat password baru ProTrack SDK.</p>
+            <p style="margin: 24px 0;">
+              <a href="${resetUrl.href}" style="background: #111827; color: #ffffff; padding: 12px 16px; border-radius: 8px; text-decoration: none;">
+                Reset Password
+              </a>
+            </p>
+            <p>Link ini berlaku selama 1 jam. Jika Anda tidak meminta reset password, abaikan email ini.</p>
+          </div>
+        `,
+        text: [
+          `Halo ${user.name},`,
+          "Klik link berikut untuk membuat password baru ProTrack SDK:",
+          resetUrl.href,
+          "Link ini berlaku selama 1 jam. Jika Anda tidak meminta reset password, abaikan email ini.",
+        ].join("\n\n"),
+      });
+
+      if (!result.sent) {
+        throw new Error("Konfigurasi email belum tersedia");
+      }
+    },
   },
   emailVerification: {
     sendOnSignUp: true,
