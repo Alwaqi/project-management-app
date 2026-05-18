@@ -4,7 +4,9 @@ import Image from "next/image";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  ArrowRight,
   BarChart3,
+  Bell,
   CalendarClock,
   CheckCircle2,
   ChevronDown,
@@ -23,8 +25,10 @@ import {
   PenLine,
   Plus,
   Save,
+  Sparkles,
   Trash2,
   Users,
+  X,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -48,6 +52,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -134,11 +139,28 @@ const statusVariant: Record<ProjectStatus, "secondary" | "success" | "warning"> 
   Selesai: "success",
 };
 
-const navItems = [
-  { id: "dashboard" as const, label: "Dasbor", icon: LayoutDashboard },
-  { id: "projects" as const, label: "Proyek", icon: FolderKanban },
-  { id: "kanban" as const, label: "Kanban", icon: Kanban },
-  { id: "journal" as const, label: "Tugas Harian", icon: ClipboardList },
+type IconTone = "indigo" | "sky" | "violet" | "emerald" | "amber" | "rose" | "teal";
+
+const iconToneClass: Record<IconTone, { bg: string; text: string; ring: string }> = {
+  indigo: { bg: "bg-indigo-100", text: "text-indigo-600", ring: "ring-indigo-200" },
+  sky: { bg: "bg-sky-100", text: "text-sky-600", ring: "ring-sky-200" },
+  violet: { bg: "bg-violet-100", text: "text-violet-600", ring: "ring-violet-200" },
+  emerald: { bg: "bg-emerald-100", text: "text-emerald-600", ring: "ring-emerald-200" },
+  amber: { bg: "bg-amber-100", text: "text-amber-600", ring: "ring-amber-200" },
+  rose: { bg: "bg-rose-100", text: "text-rose-600", ring: "ring-rose-200" },
+  teal: { bg: "bg-teal-100", text: "text-teal-600", ring: "ring-teal-200" },
+};
+
+const navItems: Array<{
+  id: View;
+  label: string;
+  icon: typeof LayoutDashboard;
+  tone: IconTone;
+}> = [
+  { id: "dashboard", label: "Dasbor", icon: LayoutDashboard, tone: "indigo" },
+  { id: "projects", label: "Proyek", icon: FolderKanban, tone: "violet" },
+  { id: "kanban", label: "Kanban", icon: Kanban, tone: "sky" },
+  { id: "journal", label: "Tugas Harian", icon: ClipboardList, tone: "emerald" },
 ];
 
 export default function Home() {
@@ -293,49 +315,77 @@ export default function Home() {
   return (
     <main className="min-h-screen w-full bg-background">
       <div className="flex min-h-screen w-full flex-col lg:flex-row">
-        <aside className="w-full border-b bg-card lg:sticky lg:top-0 lg:h-screen lg:w-72 lg:shrink-0 lg:border-b-0 lg:border-r">
+        <aside className="w-full border-b border-border/60 bg-card/80 backdrop-blur lg:sticky lg:top-0 lg:h-screen lg:w-72 lg:shrink-0 lg:border-b-0 lg:border-r">
           <div className="flex h-full min-w-0 flex-col gap-4 p-3 sm:gap-6 sm:p-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-md border bg-white">
-                <Image
-                  src="/logo-sdk.png"
-                  alt="Logo SDK"
-                  width={40}
-                  height={40}
-                  className="h-full w-full object-contain p-1"
-                />
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border bg-white ring-2 ring-indigo-100">
+                  <Image
+                    src="/logo-sdk.png"
+                    alt="Logo SDK"
+                    width={40}
+                    height={40}
+                    className="h-full w-full object-contain p-1"
+                  />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">ProTrack SDK</p>
+                  <p className="text-xs text-muted-foreground">Project tracking tim SDK</p>
+                </div>
               </div>
-              <div className="min-w-0">
-                <p className="text-sm font-semibold">ProTrack SDK</p>
-                <p className="text-xs text-muted-foreground">Project tracking tim SDK</p>
-              </div>
+              <NotificationBell
+                activeUser={activeUser}
+                projects={projects}
+                tasks={tasks}
+                users={users}
+                onNavigate={setActiveView}
+              />
             </div>
 
             <nav className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-1">
               {navItems.map((item) => {
                 const Icon = item.icon;
+                const tone = iconToneClass[item.tone];
+                const isActive = activeView === item.id;
 
                 return (
-                  <Button
+                  <button
                     key={item.id}
                     type="button"
-                    variant={activeView === item.id ? "secondary" : "ghost"}
-                    className="h-auto min-h-10 justify-center gap-2 px-2 text-xs sm:text-sm lg:justify-start"
                     onClick={() => setActiveView(item.id)}
                     title={item.label}
+                    className={cn(
+                      "group flex items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left text-sm font-medium transition-all",
+                      isActive
+                        ? "border-border/60 bg-white text-foreground shadow-sm ring-1 ring-indigo-100"
+                        : "text-muted-foreground hover:bg-white/60 hover:text-foreground",
+                    )}
                   >
-                    <Icon className="h-4 w-4" aria-hidden="true" />
+                    <span
+                      className={cn(
+                        "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-all",
+                        tone.bg,
+                        isActive ? `ring-2 ${tone.ring}` : "opacity-90 group-hover:opacity-100",
+                      )}
+                    >
+                      <Icon className={cn("h-4.5 w-4.5", tone.text)} aria-hidden="true" />
+                    </span>
                     <span className="truncate">{item.label}</span>
-                  </Button>
+                  </button>
                 );
               })}
             </nav>
 
-            <div className="mt-auto rounded-lg border bg-background p-3">
+            <div className="mt-auto rounded-2xl border border-border/60 bg-white/70 p-3 shadow-sm backdrop-blur">
               <div className="grid min-w-0 gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium">{activeUser.nama}</p>
-                  <p className="break-all text-xs text-muted-foreground">{activeUser.email}</p>
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 text-sm font-semibold text-white shadow-sm">
+                    {getInitials(activeUser.nama)}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold">{activeUser.nama}</p>
+                    <p className="break-all text-xs text-muted-foreground">{activeUser.email}</p>
+                  </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Badge variant={activeUser.role === "Leader" ? "default" : "outline"}>
@@ -395,9 +445,6 @@ export default function Home() {
               projects={projects}
               tasks={tasks}
               users={users}
-              onUpdateTaskStatus={(projectId, targetTaskId, status) => {
-                void updateTaskStatus(projectId, targetTaskId, status, loadWorkspace, showToast);
-              }}
             />
           )}
           {activeView === "journal" && (
@@ -406,8 +453,8 @@ export default function Home() {
               projects={projects}
               tasks={tasks}
               users={users}
-              onUpdateTaskStatus={(projectId, targetTaskId, status) => {
-                void updateTaskStatus(projectId, targetTaskId, status, loadWorkspace, showToast);
+              onUpdateTaskStatus={(projectId, targetTaskId, status, note) => {
+                void updateTaskStatus(projectId, targetTaskId, status, loadWorkspace, showToast, note);
               }}
             />
           )}
@@ -800,16 +847,6 @@ function DashboardView({
 
     return !isProjectOverdue(project, today) && getDaysUntilDeadline(project.deadline, today) > 7;
   });
-  const memberPerformance = useMemo(
-    () =>
-      summary?.memberPerformance.map((member) => ({
-        ...member,
-        completed: member.selesai,
-        inProgress: member.dikerjakan,
-        completionRate: member.rasio_selesai,
-      })) ?? getMemberPerformance(users, projects, tasks),
-    [projects, summary?.memberPerformance, tasks, users],
-  );
   const averageProgress = projects.length
     ? Math.round(
         projects.reduce((sum, project) => sum + (project.progress ?? getProjectProgress(project, tasks)), 0) /
@@ -830,22 +867,20 @@ function DashboardView({
       />
 
       <div className="grid min-w-0 gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-        <MetricCard label="Proyek Berjalan" value={metrics?.proyek_berjalan ?? activeProjects.length} icon={FolderKanban} />
-        <MetricCard label="Tugas Hari Ini" value={metrics?.tugas_hari_ini ?? todayTasks.length} icon={ClipboardList} />
-        <MetricCard label="Rata-rata Progress" value={`${metrics?.rata_rata_progress ?? averageProgress}%`} icon={BarChart3} />
-        <MetricCard label="Proyek Selesai" value={metrics?.proyek_selesai ?? completedProjects.length} icon={CheckCircle2} />
-        <MetricCard label="Proyek Overdue" value={metrics?.proyek_overdue ?? overdueProjects.length} icon={AlertTriangle} />
-        <MetricCard label="Deadline 7 Hari" value={metrics?.deadline_minggu_ini ?? dueSoonProjects.length} icon={CalendarClock} />
+        <MetricCard label="Proyek Berjalan" value={metrics?.proyek_berjalan ?? activeProjects.length} icon={FolderKanban} tone="indigo" />
+        <MetricCard label="Tugas Hari Ini" value={metrics?.tugas_hari_ini ?? todayTasks.length} icon={ClipboardList} tone="emerald" />
+        <MetricCard label="Rata-rata Progress" value={`${metrics?.rata_rata_progress ?? averageProgress}%`} icon={BarChart3} tone="sky" />
+        <MetricCard label="Proyek Selesai" value={metrics?.proyek_selesai ?? completedProjects.length} icon={CheckCircle2} tone="teal" />
+        <MetricCard label="Proyek Overdue" value={metrics?.proyek_overdue ?? overdueProjects.length} icon={AlertTriangle} tone="rose" />
+        <MetricCard label="Deadline 7 Hari" value={metrics?.deadline_minggu_ini ?? dueSoonProjects.length} icon={CalendarClock} tone="amber" />
       </div>
 
-      {activeUser.role === "Tim" && (
-        <TeamKpiChart
-          activeUser={activeUser}
-          projects={projects}
-          tasks={tasks}
-          today={today}
-        />
-      )}
+      <TeamKpiChart
+        activeUser={activeUser}
+        projects={projects}
+        tasks={tasks}
+        today={today}
+      />
 
       <GanttChart
         activeUser={activeUser}
@@ -855,93 +890,24 @@ function DashboardView({
         today={today}
       />
 
-      <div className="grid min-w-0 gap-4 sm:gap-6 xl:grid-cols-[1fr_1.15fr]">
-        <DeadlineRiskChart
-          overdueCount={overdueProjects.length}
-          dueSoonCount={dueSoonProjects.length}
-          onTrackCount={onTrackProjects.length}
-          withoutDeadlineCount={withoutDeadline}
-        />
-        <DeadlineWatchlist
-          projects={[...overdueProjects, ...dueSoonProjects, ...onTrackProjects].slice(0, 6)}
-          today={today}
-        />
-      </div>
-
       <Card>
         <CardHeader>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <CardTitle>Kinerja Per Anggota</CardTitle>
-              <CardDescription>
-                Ringkasan jumlah pekerjaan yang sedang dikerjakan dan sudah selesai per orang.
-              </CardDescription>
+              <CardTitle>Progress Proyek</CardTitle>
+              <CardDescription>Persentase dihitung dari jumlah tugas selesai terhadap target.</CardDescription>
             </div>
-            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-muted">
-              <Users className="h-5 w-5 text-primary" aria-hidden="true" />
+            <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl", iconToneClass.violet.bg)}>
+              <BarChart3 className={cn("h-5 w-5", iconToneClass.violet.text)} aria-hidden="true" />
             </div>
           </div>
         </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Anggota</TableHead>
-                <TableHead>Jenis Tim</TableHead>
-                <TableHead className="text-right">Dikerjakan</TableHead>
-                <TableHead className="text-right">Selesai</TableHead>
-                <TableHead className="text-right">Total</TableHead>
-                <TableHead>Rasio selesai</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {memberPerformance.map((member) => (
-                <TableRow key={member.id}>
-                  <TableCell className="min-w-52">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary text-xs font-semibold text-secondary-foreground">
-                        {getInitials(member.nama)}
-                      </div>
-                      <div>
-                        <p className="font-medium">{member.nama}</p>
-                        <p className="text-xs text-muted-foreground">{member.email}</p>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{member.team_type}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right font-semibold">{member.inProgress}</TableCell>
-                  <TableCell className="text-right font-semibold text-primary">
-                    {member.completed}
-                  </TableCell>
-                  <TableCell className="text-right">{member.total}</TableCell>
-                  <TableCell className="min-w-48">
-                    <div className="flex items-center gap-3">
-                      <Progress value={member.completionRate} />
-                      <span className="w-12 text-right text-xs font-semibold">
-                        {member.completionRate}%
-                      </span>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      <div className="grid min-w-0 gap-4 sm:gap-6 xl:grid-cols-[1.5fr_1fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Progress Proyek</CardTitle>
-            <CardDescription>Persentase dihitung dari jumlah tugas selesai terhadap target.</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-4">
-            {projects.map((project) => {
+        <CardContent className="grid gap-4">
+          {projects.length > 0 ? (
+            projects.map((project) => {
               const progress = project.progress ?? getProjectProgress(project, tasks);
               return (
-                <div key={project.id} className="rounded-lg border p-4">
+                <div key={project.id} className="rounded-xl border border-border/60 bg-white/70 p-4">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                       <p className="font-medium">{project.nama_proyek}</p>
@@ -949,15 +915,6 @@ function DashboardView({
                         {project.total_tugas ?? tasks.filter((task) => task.project_id === project.id).length} dari{" "}
                         {getProjectTargetCount(project)} tugas target
                       </p>
-                      {project.target_detail_tugas.length > 0 && (
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {project.target_detail_tugas
-                            .slice(0, 2)
-                            .map((item) => item.deskripsi)
-                            .join(", ")}
-                          {project.target_detail_tugas.length > 2 ? "..." : ""}
-                        </p>
-                      )}
                       {project.deadline && (
                         <p className="mt-1 text-xs text-muted-foreground">
                           Deadline {formatDate(project.deadline)}
@@ -977,22 +934,14 @@ function DashboardView({
                   </div>
                 </div>
               );
-            })}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Update Terbaru</CardTitle>
-            <CardDescription>Catatan kerja terbaru dari anggota tim.</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-3">
-            {(summary?.recentTasks ?? tasks).slice(0, 5).map((task) => (
-              <ActivityItem key={task.id} task={task} projects={projects} users={users} />
-            ))}
-          </CardContent>
-        </Card>
-      </div>
+            })
+          ) : (
+            <div className="rounded-xl border border-dashed border-border/60 p-8 text-center text-sm text-muted-foreground">
+              Belum ada proyek yang dapat dipantau.
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -1821,6 +1770,7 @@ function JournalView({
     projectId: string,
     targetTaskId: string,
     status: TargetTaskStatus,
+    note?: string,
   ) => void;
 }) {
   const selectableProjects = projects.filter(
@@ -1829,15 +1779,23 @@ function JournalView({
       (activeUser.role === "Leader" || getVisibleTargetDetails(project, activeUser).length > 0),
   );
   const [selectedProject, setSelectedProject] = useState(selectableProjects[0]?.id ?? "");
+  const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
+  const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null);
   useEffect(() => {
     if (!selectableProjects.some((project) => project.id === selectedProject)) {
       setSelectedProject(selectableProjects[0]?.id ?? "");
     }
   }, [selectableProjects, selectedProject]);
   const selectedProjectData = selectableProjects.find((project) => project.id === selectedProject);
-  const completedTargetIds = getCompletedTargetIds(
-    tasks.filter((task) => task.project_id === selectedProject),
-  );
+  const projectTasks = tasks.filter((task) => task.project_id === selectedProject);
+  const completedTargetIds = getCompletedTargetIds(projectTasks);
+  const completedTaskByTargetId = useMemo(() => {
+    const map = new Map<string, Task>();
+    for (const task of projectTasks) {
+      if (task.target_task_id) map.set(task.target_task_id, task);
+    }
+    return map;
+  }, [projectTasks]);
   const visibleTargetDetails = selectedProjectData
     ? getVisibleTargetDetails(selectedProjectData, activeUser)
     : [];
@@ -1851,28 +1809,42 @@ function JournalView({
   const handleTargetStatusChange = (
     target: Project["target_detail_tugas"][number],
     status: TargetTaskStatus,
+    note?: string,
   ) => {
     if (!selectedProjectData) {
       return;
     }
 
-    onUpdateTaskStatus(selectedProjectData.id, target.id, status);
+    onUpdateTaskStatus(selectedProjectData.id, target.id, status, note);
+  };
+
+  const handleSubmitCompletion = (target: Project["target_detail_tugas"][number]) => {
+    const note = noteDrafts[target.id]?.trim();
+    handleTargetStatusChange(target, "Selesai", note || undefined);
+    setExpandedNoteId(null);
   };
 
   return (
     <div className="grid gap-6">
       <PageHeader
         title="Jurnal Tugas Harian"
-        description="Ubah status detail target sesuai progres pekerjaan harian."
+        description="Ubah status detail target dan tuliskan catatan singkat tentang apa yang Anda kerjakan."
       />
 
       <div className="grid min-w-0 gap-4 sm:gap-6 xl:grid-cols-[0.9fr_1.1fr]">
         <Card>
           <CardHeader>
-            <CardTitle>Checklist Detail Tugas</CardTitle>
-            <CardDescription>
-              Pilih proyek, lalu ubah status target. Perubahan akan tersimpan otomatis.
-            </CardDescription>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <CardTitle>Checklist Detail Tugas</CardTitle>
+                <CardDescription>
+                  Pilih proyek, ubah status, dan jelaskan apa yang Anda lakukan. Perubahan tersimpan otomatis.
+                </CardDescription>
+              </div>
+              <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl", iconToneClass.emerald.bg)}>
+                <ClipboardList className={cn("h-5 w-5", iconToneClass.emerald.text)} aria-hidden="true" />
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="grid gap-4">
@@ -1894,7 +1866,7 @@ function JournalView({
 
               {selectedProjectData ? (
                 <div className="grid gap-3">
-                  <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/45 px-3 py-2 text-sm">
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-white/70 px-3 py-2 text-sm">
                     <span className="font-medium">
                       {completedTargets} / {visibleTargetDetails.length || getProjectTargetCount(selectedProjectData)} selesai
                     </span>
@@ -1907,60 +1879,128 @@ function JournalView({
                       {visibleTargetDetails.map((target) => {
                         const isCompleted = completedTargetIds.has(target.id) || target.status === "Selesai";
                         const currentStatus = getEffectiveTargetStatus(target, completedTargetIds);
+                        const completionTask = completedTaskByTargetId.get(target.id);
+                        const draftNote = noteDrafts[target.id] ?? "";
+                        const isExpanded = expandedNoteId === target.id;
 
                         return (
                           <div
                             key={target.id}
                             className={cn(
-                              "grid gap-3 rounded-md border p-3 text-sm transition-colors sm:grid-cols-[1fr_12rem]",
-                              isCompleted ? "bg-emerald-50 text-emerald-800" : "bg-card hover:bg-muted/45",
+                              "grid gap-3 rounded-xl border border-border/60 p-3 text-sm transition-colors",
+                              isCompleted ? "bg-emerald-50/80 text-emerald-900" : "bg-white/70 hover:bg-white",
                             )}
                           >
-                            <span className={cn(isCompleted && "line-through")}>
-                              <span className="flex flex-wrap items-center gap-2">
-                                <span>{target.deskripsi}</span>
-                                <TargetStatusBadge
-                                  target={target}
-                                  today={getLocalDateKey()}
-                                  isCompleted={isCompleted}
+                            <div className="grid gap-3 sm:grid-cols-[1fr_12rem]">
+                              <span className={cn(isCompleted && "line-through")}>
+                                <span className="flex flex-wrap items-center gap-2">
+                                  <span className="font-medium">{target.deskripsi}</span>
+                                  <TargetStatusBadge
+                                    target={target}
+                                    today={getLocalDateKey()}
+                                    isCompleted={isCompleted}
+                                  />
+                                </span>
+                                <span className="mt-1 block text-xs text-muted-foreground">
+                                  PIC: {getAssignedUserName(target.assigned_user_id, users)} -{" "}
+                                  {formatTargetSchedule(target)}
+                                  {getTaskPlannedDuration(target)
+                                    ? ` - rencana ${getTaskPlannedDuration(target)} hari`
+                                    : ""}
+                                </span>
+                              </span>
+                              <Select
+                                value={currentStatus}
+                                onValueChange={(value) => {
+                                  const next = value as TargetTaskStatus;
+                                  if (next === "Selesai") {
+                                    setExpandedNoteId(target.id);
+                                  } else {
+                                    setExpandedNoteId(null);
+                                    handleTargetStatusChange(target, next);
+                                  }
+                                }}
+                              >
+                                <SelectTrigger className="bg-background">
+                                  <SelectValue placeholder="Pilih status" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="Belum Mulai">Belum mulai</SelectItem>
+                                  <SelectItem value="Dikerjakan">Dikerjakan</SelectItem>
+                                  <SelectItem value="Koreksi">Koreksi</SelectItem>
+                                  <SelectItem value="Selesai">Selesai</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            {isCompleted && completionTask?.deskripsi && completionTask.deskripsi !== target.deskripsi && (
+                              <div className="rounded-lg border border-emerald-200 bg-white/80 p-2 text-xs text-emerald-900">
+                                <span className="font-medium">Catatan: </span>
+                                {completionTask.deskripsi}
+                              </div>
+                            )}
+
+                            {!isCompleted && isExpanded && (
+                              <div className="grid gap-2 rounded-lg border border-dashed border-emerald-300 bg-emerald-50/60 p-3">
+                                <Label htmlFor={`note-${target.id}`} className="text-xs font-medium text-emerald-900">
+                                  Jelaskan apa yang Anda lakukan pada tugas ini
+                                </Label>
+                                <Textarea
+                                  id={`note-${target.id}`}
+                                  rows={3}
+                                  value={draftNote}
+                                  onChange={(event) =>
+                                    setNoteDrafts((prev) => ({ ...prev, [target.id]: event.target.value }))
+                                  }
+                                  placeholder="Contoh: Sudah menyusun draft proposal v1 dan mengirim ke reviewer."
+                                  className="bg-white"
                                 />
-                              </span>
-                              <span className="mt-1 block text-xs text-muted-foreground">
-                                PIC: {getAssignedUserName(target.assigned_user_id, users)} -{" "}
-                                {formatTargetSchedule(target)}
-                                {getTaskPlannedDuration(target)
-                                  ? ` - rencana ${getTaskPlannedDuration(target)} hari`
-                                  : ""}
-                              </span>
-                            </span>
-                            <Select
-                              value={currentStatus}
-                              onValueChange={(value) =>
-                                handleTargetStatusChange(target, value as TargetTaskStatus)
-                              }
-                            >
-                              <SelectTrigger className="bg-background">
-                                <SelectValue placeholder="Pilih status" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="Belum Mulai">Belum mulai</SelectItem>
-                                <SelectItem value="Dikerjakan">Dikerjakan</SelectItem>
-                                <SelectItem value="Koreksi">Koreksi</SelectItem>
-                                <SelectItem value="Selesai">Selesai</SelectItem>
-                              </SelectContent>
-                            </Select>
+                                <div className="flex justify-end gap-2">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setExpandedNoteId(null)}
+                                  >
+                                    Batal
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    onClick={() => handleSubmitCompletion(target)}
+                                  >
+                                    Tandai selesai
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
+
+                            {!isCompleted && !isExpanded && (
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="gap-2"
+                                  onClick={() => setExpandedNoteId(target.id)}
+                                >
+                                  <PenLine className="h-3.5 w-3.5" aria-hidden="true" />
+                                  Tambah catatan & selesaikan
+                                </Button>
+                              </div>
+                            )}
                           </div>
                         );
                       })}
                     </div>
                   ) : (
-                    <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+                    <div className="rounded-xl border border-dashed border-border/60 p-8 text-center text-sm text-muted-foreground">
                       Tidak ada detail tugas yang ditugaskan ke akun ini.
                     </div>
                   )}
                 </div>
               ) : (
-                <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+                <div className="rounded-xl border border-dashed border-border/60 p-8 text-center text-sm text-muted-foreground">
                   Belum ada proyek aktif yang ditugaskan ke akun ini.
                 </div>
               )}
@@ -1970,8 +2010,15 @@ function JournalView({
 
         <Card>
           <CardHeader>
-            <CardTitle>Riwayat Tugas</CardTitle>
-            <CardDescription>Aktivitas terbaru yang masuk ke catatan proyek.</CardDescription>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <CardTitle>Riwayat Tugas</CardTitle>
+                <CardDescription>Catatan terbaru yang masuk ke proyek.</CardDescription>
+              </div>
+              <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl", iconToneClass.sky.bg)}>
+                <ListChecks className={cn("h-5 w-5", iconToneClass.sky.text)} aria-hidden="true" />
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="grid gap-3">
             {tasks.length > 0 ? (
@@ -1979,7 +2026,7 @@ function JournalView({
                 <ActivityItem key={task.id} task={task} projects={projects} users={users} />
               ))
             ) : (
-              <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+              <div className="rounded-xl border border-dashed border-border/60 p-8 text-center text-sm text-muted-foreground">
                 Belum ada tugas harian.
               </div>
             )}
@@ -1995,17 +2042,11 @@ function KanbanView({
   projects,
   tasks,
   users,
-  onUpdateTaskStatus,
 }: {
   activeUser: User;
   projects: ProjectWithProgress[];
   tasks: Task[];
   users: User[];
-  onUpdateTaskStatus: (
-    projectId: string,
-    targetTaskId: string,
-    status: TargetTaskStatus,
-  ) => void;
 }) {
   const today = getLocalDateKey();
   const [selectedProjectId, setSelectedProjectId] = useState("all");
@@ -2074,6 +2115,10 @@ function KanbanView({
         }
       />
 
+      <div className="rounded-xl border border-dashed border-border/60 bg-white/60 p-3 text-xs text-muted-foreground">
+        Tampilan ini bersifat <span className="font-medium">read-only</span>. Status kartu akan otomatis berpindah mengikuti aktivitas pada <span className="font-medium">Jurnal Tugas Harian</span>.
+      </div>
+
       <div className="grid min-w-0 gap-4 xl:grid-cols-4">
         {targetStatusColumns.map((status) => {
           const items = itemsByStatus.get(status) ?? [];
@@ -2091,7 +2136,7 @@ function KanbanView({
               <CardContent className="grid gap-3">
                 {items.length > 0 ? (
                   items.map(({ project, target, isCompleted }) => (
-                    <div key={target.id} className="grid gap-3 rounded-lg border bg-background p-3">
+                    <div key={target.id} className="grid gap-3 rounded-xl border border-border/60 bg-white/80 p-3">
                       <div className="grid gap-1">
                         <div className="flex items-start justify-between gap-2">
                           <p className={cn("text-sm font-medium", isCompleted && "line-through")}>
@@ -2114,26 +2159,10 @@ function KanbanView({
                           <Badge variant="outline">{getTaskPlannedDuration(target)} hari</Badge>
                         ) : null}
                       </div>
-                      <Select
-                        value={getEffectiveTargetStatus(target, completedTargetIds)}
-                        onValueChange={(value) =>
-                          onUpdateTaskStatus(project.id, target.id, value as TargetTaskStatus)
-                        }
-                      >
-                        <SelectTrigger className="bg-card">
-                          <SelectValue placeholder="Pilih status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Belum Mulai">Belum mulai</SelectItem>
-                          <SelectItem value="Dikerjakan">Dikerjakan</SelectItem>
-                          <SelectItem value="Koreksi">Koreksi</SelectItem>
-                          <SelectItem value="Selesai">Selesai</SelectItem>
-                        </SelectContent>
-                      </Select>
                     </div>
                   ))
                 ) : (
-                  <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                  <div className="rounded-xl border border-dashed border-border/60 p-6 text-center text-sm text-muted-foreground">
                     Tidak ada tugas.
                   </div>
                 )}
@@ -2142,6 +2171,294 @@ function KanbanView({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+type AppNotification = {
+  id: string;
+  title: string;
+  description: string;
+  createdAt: string;
+  view: View;
+  tone: IconTone;
+  icon: typeof Bell;
+};
+
+function buildNotifications(
+  activeUser: User,
+  projects: ProjectWithProgress[],
+  tasks: Task[],
+  users: User[],
+): AppNotification[] {
+  const today = getLocalDateKey();
+  const notifications: AppNotification[] = [];
+
+  if (activeUser.role === "Tim") {
+    projects.forEach((project) => {
+      project.target_detail_tugas.forEach((target) => {
+        if (target.assigned_user_id !== activeUser.id) return;
+        if (target.status === "Selesai") return;
+
+        if (target.deadline) {
+          const daysLeft = getDaysUntilDeadline(target.deadline, today);
+          if (daysLeft < 0) {
+            notifications.push({
+              id: `overdue-${target.id}`,
+              title: "Tugas overdue",
+              description: `${target.deskripsi} di ${project.nama_proyek} terlambat ${Math.abs(daysLeft)} hari.`,
+              createdAt: target.deadline,
+              view: "journal",
+              tone: "rose",
+              icon: AlertTriangle,
+            });
+          } else if (daysLeft <= 3) {
+            notifications.push({
+              id: `due-${target.id}`,
+              title: "Deadline dekat",
+              description: `${target.deskripsi} di ${project.nama_proyek} jatuh tempo ${daysLeft === 0 ? "hari ini" : `dalam ${daysLeft} hari`}.`,
+              createdAt: target.deadline,
+              view: "journal",
+              tone: "amber",
+              icon: CalendarClock,
+            });
+          }
+        }
+
+        if (target.status === "Belum Mulai") {
+          notifications.push({
+            id: `assigned-${target.id}`,
+            title: "Tugas baru ditugaskan",
+            description: `${target.deskripsi} di ${project.nama_proyek}.`,
+            createdAt: target.deadline ?? project.dibuat_pada,
+            view: "journal",
+            tone: "indigo",
+            icon: Sparkles,
+          });
+        }
+      });
+    });
+  } else {
+    const recentTasks = [...tasks].sort((a, b) => b.tanggal.localeCompare(a.tanggal)).slice(0, 10);
+    recentTasks.forEach((task) => {
+      const project = projects.find((p) => p.id === task.project_id);
+      const user = users.find((u) => u.id === task.user_id);
+      if (!project) return;
+      notifications.push({
+        id: `done-${task.id}`,
+        title: "Tugas diselesaikan",
+        description: `${user?.nama ?? "Anggota"} menyelesaikan tugas di ${project.nama_proyek}.`,
+        createdAt: task.tanggal,
+        view: "dashboard",
+        tone: "emerald",
+        icon: CheckCircle2,
+      });
+    });
+
+    projects.forEach((project) => {
+      if (!project.deadline || project.status === "Selesai") return;
+      if (isProjectOverdue(project, today)) {
+        notifications.push({
+          id: `proj-overdue-${project.id}`,
+          title: "Proyek overdue",
+          description: `${project.nama_proyek} sudah melewati deadline.`,
+          createdAt: project.deadline,
+          view: "dashboard",
+          tone: "rose",
+          icon: AlertTriangle,
+        });
+      } else {
+        const daysLeft = getDaysUntilDeadline(project.deadline, today);
+        if (daysLeft <= 7 && daysLeft >= 0) {
+          notifications.push({
+            id: `proj-due-${project.id}`,
+            title: "Deadline proyek dekat",
+            description: `${project.nama_proyek} jatuh tempo dalam ${daysLeft === 0 ? "hari ini" : `${daysLeft} hari`}.`,
+            createdAt: project.deadline,
+            view: "dashboard",
+            tone: "amber",
+            icon: CalendarClock,
+          });
+        }
+      }
+    });
+  }
+
+  return notifications
+    .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""))
+    .slice(0, 30);
+}
+
+function NotificationBell({
+  activeUser,
+  projects,
+  tasks,
+  users,
+  onNavigate,
+}: {
+  activeUser: User;
+  projects: ProjectWithProgress[];
+  tasks: Task[];
+  users: User[];
+  onNavigate: (view: View) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
+  const storageKey = `protrack:notif-read:${activeUser.id}`;
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const stored = window.localStorage.getItem(storageKey);
+      if (stored) setReadIds(new Set(JSON.parse(stored) as string[]));
+    } catch {
+      // ignore
+    }
+  }, [storageKey]);
+
+  const persist = (next: Set<string>) => {
+    setReadIds(next);
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem(storageKey, JSON.stringify(Array.from(next)));
+      } catch {
+        // ignore
+      }
+    }
+  };
+
+  const notifications = useMemo(
+    () => buildNotifications(activeUser, projects, tasks, users),
+    [activeUser, projects, tasks, users],
+  );
+  const unreadCount = notifications.filter((n) => !readIds.has(n.id)).length;
+
+  const handleClick = (notif: AppNotification) => {
+    const next = new Set(readIds);
+    next.add(notif.id);
+    persist(next);
+    onNavigate(notif.view);
+    setOpen(false);
+  };
+
+  const handleMarkAll = () => {
+    const next = new Set(readIds);
+    notifications.forEach((n) => next.add(n.id));
+    persist(next);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target?.closest("[data-notif-root]")) {
+        setOpen(false);
+      }
+    };
+    window.addEventListener("click", handler);
+    return () => window.removeEventListener("click", handler);
+  }, [open]);
+
+  const viewLabels: Record<View, string> = {
+    dashboard: "Dasbor",
+    projects: "Proyek",
+    kanban: "Kanban",
+    journal: "Tugas Harian",
+  };
+
+  return (
+    <div className="relative shrink-0" data-notif-root>
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen((value) => !value);
+        }}
+        className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-border/60 bg-white text-muted-foreground transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+        aria-label="Notifikasi"
+      >
+        <Bell className="h-4 w-4" aria-hidden="true" />
+        {unreadCount > 0 && (
+          <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white shadow">
+            {unreadCount > 9 ? "9+" : unreadCount}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-12 z-50 w-80 rounded-2xl border border-border/60 bg-white shadow-xl">
+          <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
+            <div>
+              <p className="text-sm font-semibold">Notifikasi</p>
+              <p className="text-xs text-muted-foreground">
+                {unreadCount > 0 ? `${unreadCount} belum dibaca` : "Semua sudah dibaca"}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {notifications.length > 0 && unreadCount > 0 && (
+                <button
+                  type="button"
+                  onClick={handleMarkAll}
+                  className="text-xs font-medium text-indigo-600 hover:underline"
+                >
+                  Tandai semua
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="rounded-md p-1 text-muted-foreground hover:bg-muted/50"
+                aria-label="Tutup"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+          <div className="max-h-96 overflow-y-auto">
+            {notifications.length > 0 ? (
+              notifications.map((notif) => {
+                const Icon = notif.icon;
+                const tone = iconToneClass[notif.tone];
+                const isRead = readIds.has(notif.id);
+                return (
+                  <button
+                    key={notif.id}
+                    type="button"
+                    onClick={() => handleClick(notif)}
+                    className={cn(
+                      "flex w-full gap-3 border-b border-border/40 px-4 py-3 text-left transition-colors hover:bg-muted/40",
+                      !isRead && "bg-indigo-50/40",
+                    )}
+                  >
+                    <span className={cn("mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl", tone.bg)}>
+                      <Icon className={cn("h-4 w-4", tone.text)} aria-hidden="true" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-2">
+                        <span className="truncate text-sm font-medium text-foreground">
+                          {notif.title}
+                        </span>
+                        {!isRead && <span className="h-2 w-2 shrink-0 rounded-full bg-indigo-500" />}
+                      </span>
+                      <span className="mt-0.5 line-clamp-2 block text-xs text-muted-foreground">
+                        {notif.description}
+                      </span>
+                      <span className="mt-1 flex items-center gap-1 text-[11px] font-medium text-indigo-600">
+                        Buka {viewLabels[notif.view]}
+                        <ArrowRight className="h-3 w-3" aria-hidden="true" />
+                      </span>
+                    </span>
+                  </button>
+                );
+              })
+            ) : (
+              <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+                Belum ada notifikasi.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2170,11 +2487,14 @@ function MetricCard({
   label,
   value,
   icon: Icon,
+  tone = "indigo",
 }: {
   label: string;
   value: string | number;
   icon: typeof FolderKanban;
+  tone?: IconTone;
 }) {
+  const palette = iconToneClass[tone];
   return (
     <Card>
       <CardContent className="flex items-center justify-between gap-4 p-5">
@@ -2182,8 +2502,8 @@ function MetricCard({
           <p className="text-sm text-muted-foreground">{label}</p>
           <p className="mt-1 text-2xl font-semibold">{value}</p>
         </div>
-        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-muted">
-          <Icon className="h-5 w-5 text-primary" aria-hidden="true" />
+        <div className={cn("flex h-11 w-11 items-center justify-center rounded-xl", palette.bg)}>
+          <Icon className={cn("h-5 w-5", palette.text)} aria-hidden="true" />
         </div>
       </CardContent>
     </Card>
@@ -2817,6 +3137,7 @@ async function updateTaskStatus(
   status: TargetTaskStatus,
   refresh: () => Promise<unknown>,
   showToast: (message: string) => void,
+  note?: string,
 ) {
   try {
     await fetchJson<Task | null>("/api/tasks", {
@@ -2826,6 +3147,7 @@ async function updateTaskStatus(
         target_task_id: targetTaskId,
         status,
         tanggal: getLocalDateKey(),
+        ...(note ? { deskripsi: note } : {}),
       }),
     });
     await refresh();

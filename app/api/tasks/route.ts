@@ -77,7 +77,7 @@ export async function POST(request: Request) {
       }
     }
 
-    const description = targetTask?.deskripsi ?? payload.deskripsi;
+    const description = payload.deskripsi ?? targetTask?.deskripsi;
 
     if (!description) {
       return NextResponse.json({ error: "Deskripsi wajib diisi" }, { status: 400 });
@@ -169,7 +169,7 @@ export async function PATCH(request: Request) {
         projectId: payload.project_id,
         targetTaskId: payload.target_task_id,
         userId: currentUser.id,
-        deskripsi: targetTask.deskripsi,
+        deskripsi: payload.deskripsi ?? targetTask.deskripsi,
         tanggal: payload.tanggal ?? getLocalDateKey(),
       });
       const [createdTask] = await tx.select().from(task).where(eq(task.id, taskId)).limit(1);

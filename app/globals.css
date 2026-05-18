@@ -4,26 +4,26 @@
 
 @layer base {
   :root {
-    --background: 210 20% 98%;
-    --foreground: 222 31% 12%;
+    --background: 220 30% 98%;
+    --foreground: 222 35% 14%;
     --card: 0 0% 100%;
-    --card-foreground: 222 31% 12%;
+    --card-foreground: 222 35% 14%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222 31% 12%;
-    --primary: 171 66% 30%;
+    --popover-foreground: 222 35% 14%;
+    --primary: 222 60% 56%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 214 30% 91%;
-    --secondary-foreground: 222 31% 12%;
-    --muted: 214 28% 92%;
-    --muted-foreground: 215 14% 43%;
-    --accent: 39 86% 56%;
-    --accent-foreground: 222 31% 12%;
-    --destructive: 0 72% 51%;
+    --secondary: 222 50% 96%;
+    --secondary-foreground: 222 45% 22%;
+    --muted: 220 30% 95%;
+    --muted-foreground: 220 12% 46%;
+    --accent: 268 55% 65%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 60%;
     --destructive-foreground: 0 0% 100%;
-    --border: 214 23% 84%;
-    --input: 214 23% 84%;
-    --ring: 171 66% 30%;
-    --radius: 0.5rem;
+    --border: 220 24% 90%;
+    --input: 220 24% 90%;
+    --ring: 222 60% 56%;
+    --radius: 0.75rem;
   }
 
   * {
@@ -35,7 +35,12 @@
   }
 
   body {
-    @apply min-h-screen bg-background text-foreground antialiased;
+    @apply min-h-screen text-foreground antialiased;
+    background:
+      radial-gradient(1200px 600px at 0% -10%, hsl(222 80% 95%) 0%, transparent 60%),
+      radial-gradient(1000px 500px at 100% 0%, hsl(268 70% 95%) 0%, transparent 60%),
+      hsl(var(--background));
+    background-attachment: fixed;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
@@ -43,5 +48,15 @@
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+
+  .card-elevated {
+    box-shadow:
+      0 1px 2px rgb(15 23 42 / 0.04),
+      0 8px 24px -12px rgb(15 23 42 / 0.08);
+  }
+
+  .surface-soft {
+    background: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(220 40% 99%) 100%);
   }
 }

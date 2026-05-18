@@ -58,6 +58,7 @@ export const taskStatusUpdateSchema = z.object({
   target_task_id: z.string().trim().min(1, "Target task ID wajib diisi"),
   status: targetTaskStatusSchema,
   tanggal: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Tanggal harus YYYY-MM-DD").optional(),
+  deskripsi: z.string().trim().min(1, "Deskripsi catatan tidak boleh kosong").optional(),
 });
 
 export type ProjectCreateInput = z.infer<typeof projectCreateSchema>;
