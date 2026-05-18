@@ -1405,31 +1405,21 @@ function GanttChart({
   today: string;
 }) {
   const isManajemen = activeUser.role === "Manajemen";
-  const defaultTeam: TeamType = useMemo(() => {
-    if (!isManajemen) return activeUser.team_type;
-    const teamWithData = teamTypeOptions.find((team) =>
-      projects.some(
-        (p) => p.owner_team === team || p.collaborator_teams.includes(team),
-      ),
-    );
-    return teamWithData ?? teamTypeOptions[0];
-  }, [activeUser.team_type, isManajemen, projects]);
-  const [selectedTeam, setSelectedTeam] = useState<TeamType>(defaultTeam);
+  const [selectedTeam, setSelectedTeam] = useState<TeamType | "all">("all");
   const [selectedProjectId, setSelectedProjectId] = useState("all");
   const [expandedTargetIds, setExpandedTargetIds] = useState<Set<string>>(new Set());
   const completedTargetIds = getCompletedTargetIds(tasks);
 
-  useEffect(() => {
-    if (isManajemen) setSelectedTeam((current) => current ?? defaultTeam);
-  }, [defaultTeam, isManajemen]);
-
-  const teamUserIds = useMemo(
-    () => new Set(users.filter((u) => u.team_type === selectedTeam).map((u) => u.id)),
-    [selectedTeam, users],
-  );
+  const teamUserIds = useMemo(() => {
+    if (selectedTeam === "all") return null;
+    return new Set(users.filter((u) => u.team_type === selectedTeam).map((u) => u.id));
+  }, [selectedTeam, users]);
 
   const getScopedTargets = (project: ProjectWithProgress) => {
     if (isManajemen) {
+      if (!teamUserIds) {
+        return project.target_detail_tugas.filter((t) => t.assigned_user_id);
+      }
       return project.target_detail_tugas.filter(
         (target) => target.assigned_user_id && teamUserIds.has(target.assigned_user_id),
       );
@@ -1439,10 +1429,13 @@ function GanttChart({
 
   const visibleProjects = projects.filter((project) => {
     if (isManajemen) {
-      const teamInvolved =
-        project.owner_team === selectedTeam ||
-        project.collaborator_teams.includes(selectedTeam);
-      return teamInvolved && getScopedTargets(project).length > 0;
+      if (selectedTeam !== "all") {
+        const teamInvolved =
+          project.owner_team === selectedTeam ||
+          project.collaborator_teams.includes(selectedTeam);
+        if (!teamInvolved) return false;
+      }
+      return getScopedTargets(project).length > 0;
     }
     return getScopedTargets(project).length > 0;
   });
@@ -1513,7 +1506,9 @@ function GanttChart({
             <CardTitle className="text-sm sm:text-base">Gantt Detail Tugas</CardTitle>
             <CardDescription className="text-xs">
               {isManajemen
-                ? `Timeline ${selectedTeam} dengan filter proyek.`
+                ? selectedTeam === "all"
+                  ? "Timeline semua tim dengan filter proyek."
+                  : `Timeline ${selectedTeam} dengan filter proyek.`
                 : "Timeline detail tugas dengan filter proyek."}
             </CardDescription>
           </div>
@@ -1527,7 +1522,7 @@ function GanttChart({
                 <Select
                   value={selectedTeam}
                   onValueChange={(v) => {
-                    setSelectedTeam(v as TeamType);
+                    setSelectedTeam(v as TeamType | "all");
                     setSelectedProjectId("all");
                   }}
                 >
@@ -1535,6 +1530,7 @@ function GanttChart({
                     <SelectValue placeholder="Pilih tim" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="all">Semua tim</SelectItem>
                     {teamTypeOptions.map((team) => (
                       <SelectItem key={team} value={team}>
                         {team}
@@ -2483,26 +2479,20 @@ function KanbanView({
 }) {
   const today = getLocalDateKey();
   const isManajemen = activeUser.role === "Manajemen";
-  const defaultTeam: TeamType = useMemo(() => {
-    if (!isManajemen) return activeUser.team_type;
-    const teamWithData = teamTypeOptions.find((team) =>
-      projects.some(
-        (p) => p.owner_team === team || p.collaborator_teams.includes(team),
-      ),
-    );
-    return teamWithData ?? teamTypeOptions[0];
-  }, [activeUser.team_type, isManajemen, projects]);
-  const [selectedTeam, setSelectedTeam] = useState<TeamType>(defaultTeam);
+  const [selectedTeam, setSelectedTeam] = useState<TeamType | "all">("all");
   const [selectedProjectId, setSelectedProjectId] = useState("all");
   const completedTargetIds = getCompletedTargetIds(tasks);
 
-  const teamUserIds = useMemo(
-    () => new Set(users.filter((u) => u.team_type === selectedTeam).map((u) => u.id)),
-    [selectedTeam, users],
-  );
+  const teamUserIds = useMemo(() => {
+    if (selectedTeam === "all") return null;
+    return new Set(users.filter((u) => u.team_type === selectedTeam).map((u) => u.id));
+  }, [selectedTeam, users]);
 
   const getScopedTargets = (project: ProjectWithProgress) => {
     if (isManajemen) {
+      if (!teamUserIds) {
+        return project.target_detail_tugas.filter((t) => t.assigned_user_id);
+      }
       return project.target_detail_tugas.filter(
         (target) => target.assigned_user_id && teamUserIds.has(target.assigned_user_id),
       );
@@ -2512,10 +2502,13 @@ function KanbanView({
 
   const visibleProjects = projects.filter((project) => {
     if (isManajemen) {
-      const teamInvolved =
-        project.owner_team === selectedTeam ||
-        project.collaborator_teams.includes(selectedTeam);
-      return teamInvolved && getScopedTargets(project).length > 0;
+      if (selectedTeam !== "all") {
+        const teamInvolved =
+          project.owner_team === selectedTeam ||
+          project.collaborator_teams.includes(selectedTeam);
+        if (!teamInvolved) return false;
+      }
+      return getScopedTargets(project).length > 0;
     }
     return getScopedTargets(project).length > 0;
   });
@@ -2557,7 +2550,9 @@ function KanbanView({
         title="Kanban Tugas"
         description={
           isManajemen
-            ? `Pantau target ${selectedTeam} berdasarkan status pengerjaan.`
+            ? selectedTeam === "all"
+              ? "Pantau semua target lintas tim berdasarkan status pengerjaan."
+              : `Pantau target ${selectedTeam} berdasarkan status pengerjaan.`
             : activeUser.role === "Leader"
               ? "Pantau semua target tugas berdasarkan status pengerjaan."
               : "Pantau target tugas yang ditugaskan ke akun Anda."
@@ -2573,7 +2568,7 @@ function KanbanView({
                 <Select
                   value={selectedTeam}
                   onValueChange={(v) => {
-                    setSelectedTeam(v as TeamType);
+                    setSelectedTeam(v as TeamType | "all");
                     setSelectedProjectId("all");
                   }}
                 >
@@ -2581,6 +2576,7 @@ function KanbanView({
                     <SelectValue placeholder="Pilih tim" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="all">Semua tim</SelectItem>
                     {teamTypeOptions.map((team) => (
                       <SelectItem key={team} value={team}>
                         {team}
