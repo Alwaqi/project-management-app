@@ -165,14 +165,23 @@ const navItems: Array<{
 
 export default function Home() {
   const session = authClient.useSession();
-  const [activeUser, setActiveUser] = useState<User | null>(null);
-  const [activeView, setActiveView] = useState<View>("dashboard");
-  const [users, setUsers] = useState<User[]>([]);
-  const [projects, setProjects] = useState<ProjectWithProgress[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const cachedSnapshot = useMemo(() => readWorkspaceCache(), []);
+  const [activeUser, setActiveUser] = useState<User | null>(
+    cachedSnapshot?.activeUser ?? null,
+  );
+  const [activeView, setActiveView] = useState<View>(() => readActiveView() ?? "dashboard");
+  const [users, setUsers] = useState<User[]>(cachedSnapshot?.users ?? []);
+  const [projects, setProjects] = useState<ProjectWithProgress[]>(
+    cachedSnapshot?.projects ?? [],
+  );
+  const [tasks, setTasks] = useState<Task[]>(cachedSnapshot?.tasks ?? []);
   const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [toast, setToast] = useState("");
+
+  useEffect(() => {
+    writeActiveView(activeView);
+  }, [activeView]);
 
   const showToast = (message: string) => {
     setToast(message);
@@ -199,6 +208,13 @@ export default function Home() {
 
         if (currentUser) {
           setActiveUser(currentUser);
+          writeWorkspaceCache({
+            email: currentUser.email,
+            activeUser: currentUser,
+            users: usersResponse,
+            projects: projectsResponse,
+            tasks: tasksResponse,
+          });
         }
 
         if (currentUser?.role === "Leader") {
@@ -302,11 +318,20 @@ export default function Home() {
       setProjects([]);
       setTasks([]);
       setDashboardSummary(null);
+      clearWorkspaceCache();
       return;
     }
 
+    if (cachedSnapshot && cachedSnapshot.email !== session.data.user.email) {
+      setActiveUser(null);
+      setUsers([]);
+      setProjects([]);
+      setTasks([]);
+      clearWorkspaceCache();
+    }
+
     void loadWorkspace(session.data.user.email);
-  }, [loadWorkspace, session.data?.user, session.isPending]);
+  }, [cachedSnapshot, loadWorkspace, session.data?.user, session.isPending]);
 
   const handleLogin = async (email: string, password: string) => {
     const { error } = await authClient.signIn.email({
@@ -370,14 +395,19 @@ export default function Home() {
     setTasks([]);
     setDashboardSummary(null);
     setActiveView("dashboard");
+    clearWorkspaceCache();
     showToast("");
   };
 
-  if (session.isPending) {
-    return <LoadingScreen message="Memeriksa sesi login..." />;
-  }
-
+  // If we have an activeUser (from cache or fresh load) render the app immediately;
+  // the session check and refresh happen in the background.
   if (!activeUser) {
+    if (session.isPending) {
+      return <LoadingScreen message="Memeriksa sesi login..." />;
+    }
+    if (session.data?.user) {
+      return <LoadingScreen message="Memuat ruang kerja..." />;
+    }
     return (
       <LoginScreen
         onLogin={handleLogin}
@@ -3411,6 +3441,70 @@ function getErrorMessage(error: unknown) {
   }
 
   return "Terjadi kesalahan. Coba lagi.";
+}
+
+const WORKSPACE_CACHE_KEY = "protrack:workspace-cache:v1";
+const ACTIVE_VIEW_KEY = "protrack:active-view:v1";
+
+type WorkspaceCache = {
+  email: string;
+  activeUser: User;
+  users: User[];
+  projects: ProjectWithProgress[];
+  tasks: Task[];
+};
+
+function readWorkspaceCache(): WorkspaceCache | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(WORKSPACE_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as WorkspaceCache;
+    if (!parsed?.email || !parsed.activeUser?.id) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeWorkspaceCache(cache: WorkspaceCache) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(WORKSPACE_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // ignore quota errors
+  }
+}
+
+function clearWorkspaceCache() {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(WORKSPACE_CACHE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+function readActiveView(): View | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const value = window.localStorage.getItem(ACTIVE_VIEW_KEY);
+    if (value === "dashboard" || value === "projects" || value === "kanban" || value === "journal") {
+      return value;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function writeActiveView(view: View) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(ACTIVE_VIEW_KEY, view);
+  } catch {
+    // ignore
+  }
 }
 
 function getAuthErrorMessage(message?: string) {
