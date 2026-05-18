@@ -955,6 +955,7 @@ function DashboardView({
         activeUser={activeUser}
         projects={projects}
         tasks={tasks}
+        users={users}
         today={today}
       />
 
@@ -1027,15 +1028,36 @@ function TeamKpiChart({
   activeUser,
   projects,
   tasks,
+  users,
   today,
 }: {
   activeUser: User;
   projects: ProjectWithProgress[];
   tasks: Task[];
+  users: User[];
   today: string;
 }) {
+  const viewableMembers = useMemo(() => {
+    if (activeUser.role === "Leader") {
+      const same = users.filter((u) => u.team_type === activeUser.team_type);
+      const ids = new Set(same.map((u) => u.id));
+      if (!ids.has(activeUser.id)) same.unshift(activeUser);
+      return same.sort((a, b) => a.nama.localeCompare(b.nama));
+    }
+    return [activeUser];
+  }, [activeUser, users]);
+  const [selectedMemberId, setSelectedMemberId] = useState(activeUser.id);
+  useEffect(() => {
+    if (!viewableMembers.some((member) => member.id === selectedMemberId)) {
+      setSelectedMemberId(activeUser.id);
+    }
+  }, [activeUser.id, selectedMemberId, viewableMembers]);
+  const selectedMember =
+    viewableMembers.find((member) => member.id === selectedMemberId) ?? activeUser;
+  const isViewingSelf = selectedMember.id === activeUser.id;
+
   const assignedTargets = projects.flatMap((project) =>
-    getAssignedTargetDetails(project, activeUser).map((target) => ({
+    getAssignedTargetDetails(project, selectedMember).map((target) => ({
       project,
       target,
     })),
@@ -1074,12 +1096,40 @@ function TeamKpiChart({
     <Card>
       <CardHeader>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <CardTitle>KPI Tim Saya</CardTitle>
-            <CardDescription>Progress target yang ditugaskan ke akun Anda.</CardDescription>
+          <div className="min-w-0">
+            <CardTitle>
+              KPI {isViewingSelf ? "Saya" : selectedMember.nama}
+            </CardTitle>
+            <CardDescription>
+              {isViewingSelf
+                ? "Progress target yang ditugaskan ke akun Anda."
+                : `Progress target yang ditugaskan ke ${selectedMember.nama} (${selectedMember.team_type}).`}
+            </CardDescription>
           </div>
-          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-muted">
-            <Gauge className="h-5 w-5 text-primary" aria-hidden="true" />
+          <div className="flex items-center gap-2">
+            {viewableMembers.length > 1 && (
+              <div className="grid gap-1">
+                <Label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                  <Filter className="h-3 w-3" aria-hidden="true" />
+                  Anggota tim
+                </Label>
+                <Select value={selectedMemberId} onValueChange={setSelectedMemberId}>
+                  <SelectTrigger className="h-9 w-48 text-xs">
+                    <SelectValue placeholder="Pilih anggota" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {viewableMembers.map((member) => (
+                      <SelectItem key={member.id} value={member.id}>
+                        {member.id === activeUser.id ? `${member.nama} (Saya)` : member.nama}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl", iconToneClass.indigo.bg)}>
+              <Gauge className={cn("h-5 w-5", iconToneClass.indigo.text)} aria-hidden="true" />
+            </div>
           </div>
         </div>
       </CardHeader>
