@@ -184,24 +184,29 @@ export default function Home() {
       setIsLoadingData(true);
 
       try {
-        const usersResponse = await fetchJson<User[]>("/api/users");
-        const email = sessionEmail ?? session.data?.user?.email;
-        const currentUser = usersResponse.find((user) => user.email === email);
-        const [projectsResponse, tasksResponse, summaryResponse] = await Promise.all([
+        const [usersResponse, projectsResponse, tasksResponse] = await Promise.all([
+          fetchJson<User[]>("/api/users"),
           fetchJson<ProjectWithProgress[]>("/api/projects"),
           fetchJson<Task[]>("/api/tasks"),
-          currentUser?.role === "Leader"
-            ? fetchJson<DashboardSummary>("/api/dashboard/summary")
-            : Promise.resolve(null),
         ]);
+
+        const email = sessionEmail ?? session.data?.user?.email;
+        const currentUser = usersResponse.find((user) => user.email === email);
 
         setUsers(usersResponse);
         setProjects(projectsResponse);
         setTasks(tasksResponse);
-        setDashboardSummary(summaryResponse);
 
         if (currentUser) {
           setActiveUser(currentUser);
+        }
+
+        if (currentUser?.role === "Leader") {
+          void fetchJson<DashboardSummary>("/api/dashboard/summary")
+            .then((summary) => setDashboardSummary(summary))
+            .catch(() => setDashboardSummary(null));
+        } else {
+          setDashboardSummary(null);
         }
 
         return currentUser;
@@ -213,6 +218,77 @@ export default function Home() {
       }
     },
     [session.data?.user?.email],
+  );
+
+  const handleOptimisticStatusUpdate = useCallback(
+    (
+      projectId: string,
+      targetTaskId: string,
+      status: TargetTaskStatus,
+      note?: string,
+    ) => {
+      if (!activeUser) return;
+      const userId = activeUser.id;
+
+      setProjects((prev) =>
+        prev.map((project) => {
+          if (project.id !== projectId) return project;
+          return {
+            ...project,
+            target_detail_tugas: project.target_detail_tugas.map((target) =>
+              target.id !== targetTaskId
+                ? target
+                : {
+                    ...target,
+                    status,
+                    assigned_user_id:
+                      target.assigned_user_id ??
+                      (status === "Belum Mulai" ? null : userId),
+                  },
+            ),
+          };
+        }),
+      );
+
+      setTasks((prev) => {
+        if (status === "Selesai") {
+          const existing = prev.find((task) => task.target_task_id === targetTaskId);
+          if (existing) {
+            return note
+              ? prev.map((task) =>
+                  task.target_task_id === targetTaskId
+                    ? { ...task, deskripsi: note }
+                    : task,
+                )
+              : prev;
+          }
+          const project = projects.find((item) => item.id === projectId);
+          const target = project?.target_detail_tugas.find((item) => item.id === targetTaskId);
+          return [
+            {
+              id: `optimistic-${Date.now()}`,
+              project_id: projectId,
+              target_task_id: targetTaskId,
+              user_id: userId,
+              deskripsi: note ?? target?.deskripsi ?? "",
+              tanggal: getLocalDateKey(),
+            },
+            ...prev,
+          ];
+        }
+        return prev.filter((task) => task.target_task_id !== targetTaskId);
+      });
+
+      void updateTaskStatus(
+        projectId,
+        targetTaskId,
+        status,
+        loadWorkspace,
+        showToast,
+        note,
+      );
+    },
+    [activeUser, projects, loadWorkspace],
   );
 
   useEffect(() => {
@@ -408,7 +484,7 @@ export default function Home() {
           </div>
         </aside>
 
-        <section className="w-full min-w-0 flex-1 p-3 sm:p-6 lg:p-8">
+        <section className="w-full min-w-0 flex-1 overflow-x-hidden p-3 sm:p-6 lg:p-8">
           {activeView === "dashboard" && (
             <DashboardView
               projects={projects}
@@ -453,9 +529,7 @@ export default function Home() {
               projects={projects}
               tasks={tasks}
               users={users}
-              onUpdateTaskStatus={(projectId, targetTaskId, status, note) => {
-                void updateTaskStatus(projectId, targetTaskId, status, loadWorkspace, showToast, note);
-              }}
+              onUpdateTaskStatus={handleOptimisticStatusUpdate}
             />
           )}
         </section>
@@ -866,14 +940,16 @@ function DashboardView({
         }
       />
 
-      <div className="grid min-w-0 gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-        <MetricCard label="Proyek Berjalan" value={metrics?.proyek_berjalan ?? activeProjects.length} icon={FolderKanban} tone="indigo" />
-        <MetricCard label="Tugas Hari Ini" value={metrics?.tugas_hari_ini ?? todayTasks.length} icon={ClipboardList} tone="emerald" />
-        <MetricCard label="Rata-rata Progress" value={`${metrics?.rata_rata_progress ?? averageProgress}%`} icon={BarChart3} tone="sky" />
-        <MetricCard label="Proyek Selesai" value={metrics?.proyek_selesai ?? completedProjects.length} icon={CheckCircle2} tone="teal" />
-        <MetricCard label="Proyek Overdue" value={metrics?.proyek_overdue ?? overdueProjects.length} icon={AlertTriangle} tone="rose" />
-        <MetricCard label="Deadline 7 Hari" value={metrics?.deadline_minggu_ini ?? dueSoonProjects.length} icon={CalendarClock} tone="amber" />
-      </div>
+      {activeUser.role === "Leader" && (
+        <div className="grid min-w-0 gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+          <MetricCard label="Proyek Berjalan" value={metrics?.proyek_berjalan ?? activeProjects.length} icon={FolderKanban} tone="indigo" />
+          <MetricCard label="Tugas Hari Ini" value={metrics?.tugas_hari_ini ?? todayTasks.length} icon={ClipboardList} tone="emerald" />
+          <MetricCard label="Rata-rata Progress" value={`${metrics?.rata_rata_progress ?? averageProgress}%`} icon={BarChart3} tone="sky" />
+          <MetricCard label="Proyek Selesai" value={metrics?.proyek_selesai ?? completedProjects.length} icon={CheckCircle2} tone="teal" />
+          <MetricCard label="Proyek Overdue" value={metrics?.proyek_overdue ?? overdueProjects.length} icon={AlertTriangle} tone="rose" />
+          <MetricCard label="Deadline 7 Hari" value={metrics?.deadline_minggu_ini ?? dueSoonProjects.length} icon={CalendarClock} tone="amber" />
+        </div>
+      )}
 
       <TeamKpiChart
         activeUser={activeUser}
@@ -2386,7 +2462,7 @@ function NotificationBell({
       </button>
 
       {open && (
-        <div className="absolute right-0 top-12 z-50 w-80 rounded-2xl border border-border/60 bg-white shadow-xl">
+        <div className="fixed inset-x-3 top-16 z-50 max-h-[80vh] overflow-hidden rounded-2xl border border-border/60 bg-white shadow-xl sm:absolute sm:inset-x-auto sm:right-0 sm:top-12 sm:w-80">
           <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
             <div>
               <p className="text-sm font-semibold">Notifikasi</p>
@@ -3150,10 +3226,9 @@ async function updateTaskStatus(
         ...(note ? { deskripsi: note } : {}),
       }),
     });
-    await refresh();
-    showToast(`Status tugas diubah menjadi ${status}.`);
   } catch (error) {
     showToast(getErrorMessage(error));
+    await refresh();
   }
 }
 
