@@ -1096,40 +1096,39 @@ function TeamKpiChart({
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="pb-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0">
-            <CardTitle>
-              KPI {isViewingSelf ? "Saya" : selectedMember.nama}
-            </CardTitle>
-            <CardDescription>
-              {isViewingSelf
-                ? "Progress target yang ditugaskan ke akun Anda."
-                : `Progress target yang ditugaskan ke ${selectedMember.nama} (${selectedMember.team_type}).`}
-            </CardDescription>
+          <div className="flex min-w-0 items-start gap-3">
+            <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl sm:hidden", iconToneClass.indigo.bg)}>
+              <Gauge className={cn("h-5 w-5", iconToneClass.indigo.text)} aria-hidden="true" />
+            </div>
+            <div className="min-w-0">
+              <CardTitle className="truncate text-sm sm:text-base">
+                KPI {isViewingSelf ? "Saya" : selectedMember.nama}
+              </CardTitle>
+              <CardDescription className="line-clamp-2 text-xs">
+                {isViewingSelf
+                  ? "Progress target yang ditugaskan ke akun Anda."
+                  : `Target ${selectedMember.nama} (${selectedMember.team_type}).`}
+              </CardDescription>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             {viewableMembers.length > 1 && (
-              <div className="grid gap-1">
-                <Label className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                  <Filter className="h-3 w-3" aria-hidden="true" />
-                  Anggota tim
-                </Label>
-                <Select value={selectedMemberId} onValueChange={setSelectedMemberId}>
-                  <SelectTrigger className="h-9 w-48 text-xs">
-                    <SelectValue placeholder="Pilih anggota" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {viewableMembers.map((member) => (
-                      <SelectItem key={member.id} value={member.id}>
-                        {member.id === activeUser.id ? `${member.nama} (Saya)` : member.nama}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              <Select value={selectedMemberId} onValueChange={setSelectedMemberId}>
+                <SelectTrigger className="h-9 w-full text-xs sm:w-48">
+                  <SelectValue placeholder="Pilih anggota" />
+                </SelectTrigger>
+                <SelectContent>
+                  {viewableMembers.map((member) => (
+                    <SelectItem key={member.id} value={member.id}>
+                      {member.id === activeUser.id ? `${member.nama} (Saya)` : member.nama}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
-            <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl", iconToneClass.indigo.bg)}>
+            <div className={cn("hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl sm:flex", iconToneClass.indigo.bg)}>
               <Gauge className={cn("h-5 w-5", iconToneClass.indigo.text)} aria-hidden="true" />
             </div>
           </div>
@@ -1297,19 +1296,21 @@ function GanttChart({
 
   return (
     <Card>
-      <CardHeader>
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div>
-            <CardTitle>Gantt Detail Tugas</CardTitle>
-            <CardDescription>Timeline detail tugas dengan filter proyek dan ringkasan progres.</CardDescription>
+      <CardHeader className="pb-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <CardTitle className="text-sm sm:text-base">Gantt Detail Tugas</CardTitle>
+            <CardDescription className="text-xs">
+              Timeline detail tugas dengan filter proyek.
+            </CardDescription>
           </div>
-          <div className="grid gap-2 sm:min-w-72">
-            <Label className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Filter className="h-3.5 w-3.5" aria-hidden="true" />
+          <div className="grid gap-1 sm:min-w-56">
+            <Label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              <Filter className="h-3 w-3" aria-hidden="true" />
               Filter proyek
             </Label>
             <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-              <SelectTrigger>
+              <SelectTrigger className="h-9 text-xs">
                 <SelectValue placeholder="Pilih proyek" />
               </SelectTrigger>
               <SelectContent>
@@ -1324,8 +1325,8 @@ function GanttChart({
           </div>
         </div>
       </CardHeader>
-      <CardContent className="grid gap-5">
-        <div className="grid gap-3 sm:grid-cols-4">
+      <CardContent className="grid gap-3">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <GanttSummaryCard label="Detail tugas" value={totalTargets} />
           <GanttSummaryCard label="Selesai" value={completedTargets} tone="success" />
           <GanttSummaryCard label="Overdue" value={overdueTargets} tone="danger" />
@@ -1333,10 +1334,10 @@ function GanttChart({
         </div>
         {ganttItems.length > 0 ? (
           <div className="w-full overflow-x-auto">
-            <div className="min-w-[860px]">
-              <div className="grid grid-cols-[20rem_1fr] gap-3 border-b pb-3 text-xs font-medium text-muted-foreground">
+            <div className="min-w-[560px]">
+              <div className="grid grid-cols-[12rem_1fr] gap-2 border-b border-border/60 pb-2 text-[11px] font-medium text-muted-foreground">
                 <span>Detail tugas</span>
-                <div className="relative h-6">
+                <div className="relative h-5">
                   {ticks.map((tick) => (
                     <span
                       key={tick.date}
@@ -1348,44 +1349,46 @@ function GanttChart({
                   ))}
                 </div>
               </div>
-              <div className="grid gap-3 pt-3">
+              <div className="grid max-h-[420px] gap-1.5 overflow-y-auto pt-2 pr-1">
                 {ganttItems.map((item) => {
                   const left = (getDateDistance(minDate, item.start) / totalDays) * 100;
                   const width = Math.max(2, ((getDateDistance(item.start, item.end) + 1) / totalDays) * 100);
                   const isExpanded = expandedTargetIds.has(item.id);
 
                   return (
-                    <div key={item.id} className="grid grid-cols-[20rem_1fr] items-start gap-3 rounded-lg border bg-background p-3">
+                    <div
+                      key={item.id}
+                      className="grid grid-cols-[12rem_1fr] items-start gap-2 rounded-md border border-border/60 bg-white/70 p-2"
+                    >
                       <div className="min-w-0">
                         <button
                           type="button"
-                          className="flex w-full min-w-0 items-start gap-2 text-left"
+                          className="flex w-full min-w-0 items-start gap-1.5 text-left"
                           onClick={() => toggleTargetExpansion(item.id)}
                         >
                           <ChevronDown
                             className={cn(
-                              "mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+                              "mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
                               isExpanded && "rotate-180",
                             )}
                             aria-hidden="true"
                           />
                           <span className="min-w-0">
-                            <span className="block truncate text-sm font-medium">{item.target.deskripsi}</span>
-                            <span className="mt-1 block truncate text-xs text-muted-foreground">
+                            <span className="block truncate text-xs font-medium">{item.target.deskripsi}</span>
+                            <span className="block truncate text-[10px] text-muted-foreground">
                               {item.project.nama_proyek}
                             </span>
                           </span>
                         </button>
                         {isExpanded && (
-                          <div className="ml-6 mt-3 grid gap-2 text-xs text-muted-foreground">
+                          <div className="ml-5 mt-1.5 grid gap-0.5 text-[10px] text-muted-foreground">
                             <span>PIC: {getAssignedUserName(item.target.assigned_user_id, users)}</span>
-                            <span>Jadwal: {formatTargetSchedule(item.target)}</span>
-                            <span>Durasi rencana: {getTaskPlannedDuration(item.target) ?? "-"} hari</span>
-                            <span>Status: {item.status}</span>
+                            <span>{formatTargetSchedule(item.target)}</span>
+                            <span>Durasi: {getTaskPlannedDuration(item.target) ?? "-"} hari · {item.status}</span>
                           </div>
                         )}
                       </div>
-                      <div className="relative h-16 rounded-md bg-muted/70">
+                      <div className="relative h-7 rounded bg-muted/60">
                         {todayOffset !== null && (
                           <span
                             className="absolute top-0 h-full w-px bg-red-500"
@@ -1395,17 +1398,14 @@ function GanttChart({
                         )}
                         <div
                           className={cn(
-                            "absolute top-3 h-10 rounded-md px-2 text-xs font-medium text-white",
+                            "absolute top-1 h-5 rounded px-1.5 text-[10px] font-medium text-white",
                             ganttStatusClass[item.status],
                           )}
                           style={{ left: `${left}%`, width: `${Math.min(width, 100 - left)}%` }}
-                          title={`${formatDate(item.start)} - ${formatDate(item.end)}`}
+                          title={`${item.status} · ${formatDate(item.start)} - ${formatDate(item.end)}`}
                         >
-                          <span className="flex h-full flex-col justify-center overflow-hidden">
+                          <span className="flex h-full items-center overflow-hidden whitespace-nowrap">
                             <span className="truncate">{item.status}</span>
-                            <span className="truncate font-normal opacity-90">
-                              {formatShortDate(item.start)} - {formatShortDate(item.end)}
-                            </span>
                           </span>
                         </div>
                       </div>
@@ -1414,15 +1414,15 @@ function GanttChart({
                 })}
               </div>
               {todayOffset !== null && (
-                <div className="mt-3 grid grid-cols-[20rem_1fr] gap-3 text-xs text-muted-foreground">
-                  <span />
-                  <span>Garis merah menandai hari ini.</span>
+                <div className="mt-2 flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                  <span className="inline-block h-3 w-px bg-red-500" aria-hidden="true" />
+                  Garis merah = hari ini
                 </div>
               )}
             </div>
           </div>
         ) : (
-          <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+          <div className="rounded-md border border-dashed border-border/60 p-6 text-center text-xs text-muted-foreground">
             Belum ada detail tugas bertanggal untuk filter ini.
           </div>
         )}
@@ -1443,14 +1443,14 @@ function GanttSummaryCard({
   return (
     <div
       className={cn(
-        "rounded-lg border p-3",
+        "rounded-lg border border-border/60 px-2.5 py-1.5",
         tone === "success" && "border-emerald-200 bg-emerald-50",
         tone === "danger" && "border-red-200 bg-red-50",
       )}
     >
       <p
         className={cn(
-          "text-xs text-muted-foreground",
+          "text-[10px] text-muted-foreground",
           tone === "success" && "text-emerald-700",
           tone === "danger" && "text-red-700",
         )}
@@ -1459,7 +1459,7 @@ function GanttSummaryCard({
       </p>
       <p
         className={cn(
-          "mt-1 text-xl font-semibold",
+          "mt-0.5 text-base font-semibold leading-tight",
           tone === "success" && "text-emerald-700",
           tone === "danger" && "text-red-700",
         )}
