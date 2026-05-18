@@ -12,8 +12,10 @@ import {
   ChevronDown,
   ChartColumnIncreasing,
   ClipboardList,
+  Download,
   Eye,
   EyeOff,
+  FileText,
   Filter,
   FolderKanban,
   Gauge,
@@ -87,7 +89,7 @@ import {
 } from "@/lib/domain";
 import { cn } from "@/lib/utils";
 
-type View = "dashboard" | "projects" | "kanban" | "journal";
+type View = "dashboard" | "projects" | "kanban" | "journal" | "report";
 type AuthMode = "login" | "register" | "forgot" | "reset";
 
 type ProjectWithProgress = Project & {
@@ -161,6 +163,7 @@ const navItems: Array<{
   { id: "projects", label: "Proyek", icon: FolderKanban, tone: "violet" },
   { id: "kanban", label: "Kanban", icon: Kanban, tone: "sky" },
   { id: "journal", label: "Tugas Harian", icon: ClipboardList, tone: "emerald" },
+  { id: "report", label: "Report", icon: FileText, tone: "amber" },
 ];
 
 export default function Home() {
@@ -184,10 +187,14 @@ export default function Home() {
   }, [activeView]);
 
   useEffect(() => {
-    if (activeUser?.role === "Manajemen" && activeView === "journal") {
+    if (!activeUser) return;
+    if (activeUser.role === "Manajemen" && activeView === "journal") {
       setActiveView("dashboard");
     }
-  }, [activeUser?.role, activeView]);
+    if (activeUser.role !== "Manajemen" && activeView === "report") {
+      setActiveView("dashboard");
+    }
+  }, [activeUser, activeView]);
 
   const showToast = (message: string) => {
     setToast(message);
@@ -456,7 +463,11 @@ export default function Home() {
 
             <nav className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-1">
               {navItems
-                .filter((item) => !(activeUser.role === "Manajemen" && item.id === "journal"))
+                .filter((item) => {
+                  if (activeUser.role === "Manajemen" && item.id === "journal") return false;
+                  if (activeUser.role !== "Manajemen" && item.id === "report") return false;
+                  return true;
+                })
                 .map((item) => {
                 const Icon = item.icon;
                 const tone = iconToneClass[item.tone];
@@ -568,6 +579,14 @@ export default function Home() {
               tasks={tasks}
               users={users}
               onUpdateTaskStatus={handleOptimisticStatusUpdate}
+            />
+          )}
+          {activeView === "report" && (
+            <ReportView
+              activeUser={activeUser}
+              projects={projects}
+              tasks={tasks}
+              users={users}
             />
           )}
         </section>
@@ -2540,6 +2559,304 @@ function ProjectTeamBadges({ project }: { project: Project }) {
   );
 }
 
+function ReportView({
+  activeUser,
+  projects,
+  tasks,
+  users,
+}: {
+  activeUser: User;
+  projects: ProjectWithProgress[];
+  tasks: Task[];
+  users: User[];
+}) {
+  const today = getLocalDateKey();
+  const defaultFrom = useMemo(() => {
+    const d = new Date(`${today}T00:00:00`);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+  }, [today]);
+  const [from, setFrom] = useState(defaultFrom);
+  const [to, setTo] = useState(today);
+  const [report, setReport] = useState<import("@/lib/reports/analyze").ReportData | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [error, setError] = useState("");
+
+  if (activeUser.role !== "Manajemen") {
+    return (
+      <div className="grid gap-4">
+        <PageHeader
+          title="Akses Terbatas"
+          description="Halaman Report hanya dapat diakses oleh role Manajemen."
+        />
+      </div>
+    );
+  }
+
+  const applyPreset = (preset: "month" | "quarter" | "semester" | "year") => {
+    const d = new Date(`${today}T00:00:00`);
+    const year = d.getFullYear();
+    const month = d.getMonth();
+    let start: Date;
+    let end: Date;
+    if (preset === "month") {
+      start = new Date(year, month, 1);
+      end = new Date(year, month + 1, 0);
+    } else if (preset === "quarter") {
+      const qStart = Math.floor(month / 3) * 3;
+      start = new Date(year, qStart, 1);
+      end = new Date(year, qStart + 3, 0);
+    } else if (preset === "semester") {
+      const sStart = Math.floor(month / 6) * 6;
+      start = new Date(year, sStart, 1);
+      end = new Date(year, sStart + 6, 0);
+    } else {
+      start = new Date(year, 0, 1);
+      end = new Date(year, 11, 31);
+    }
+    const fmt = (date: Date) =>
+      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    setFrom(fmt(start));
+    setTo(fmt(end));
+  };
+
+  const handleGenerate = async () => {
+    setError("");
+    if (from > to) {
+      setError("Tanggal mulai harus sebelum tanggal akhir.");
+      return;
+    }
+    setIsGenerating(true);
+    try {
+      const { buildReport } = await import("@/lib/reports/analyze");
+      const result = buildReport({ projects, tasks, users, range: { from, to } });
+      setReport(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Gagal generate laporan.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleDownload = async () => {
+    if (!report) return;
+    setIsDownloading(true);
+    try {
+      const { downloadReportPdf } = await import("@/lib/reports/pdf");
+      downloadReportPdf(report);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Gagal generate PDF.");
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  return (
+    <div className="grid gap-6">
+      <PageHeader
+        title="Laporan Kinerja Tim SDK"
+        description="Generate narasi analitis KPI organisasi, beban kerja per tim/anggota, dan rekomendasi kebijakan. Unduh sebagai PDF untuk distribusi internal."
+      />
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle>Konfigurasi Laporan</CardTitle>
+              <CardDescription>Pilih rentang periode lalu klik Generate.</CardDescription>
+            </div>
+            <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl", iconToneClass.amber.bg)}>
+              <FileText className={cn("h-5 w-5", iconToneClass.amber.text)} aria-hidden="true" />
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-1.5">
+              <Label htmlFor="report-from" className="text-xs">Dari tanggal</Label>
+              <Input id="report-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="report-to" className="text-xs">Sampai tanggal</Label>
+              <Input id="report-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => applyPreset("month")}>
+              Bulan ini
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => applyPreset("quarter")}>
+              Kuarter ini
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => applyPreset("semester")}>
+              Semester ini
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => applyPreset("year")}>
+              Tahun ini
+            </Button>
+          </div>
+          {error && (
+            <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+              {error}
+            </div>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" onClick={handleGenerate} disabled={isGenerating} className="gap-2">
+              <BarChart3 className="h-4 w-4" aria-hidden="true" />
+              {isGenerating ? "Memproses..." : "Generate Laporan"}
+            </Button>
+            {report && (
+              <>
+                <Button type="button" variant="default" onClick={handleDownload} disabled={isDownloading} className="gap-2">
+                  <Download className="h-4 w-4" aria-hidden="true" />
+                  {isDownloading ? "Menyiapkan PDF..." : "Download PDF"}
+                </Button>
+                <Button type="button" variant="ghost" onClick={() => setReport(null)}>
+                  Bersihkan
+                </Button>
+              </>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {report && <ReportPreview report={report} />}
+    </div>
+  );
+}
+
+function ReportPreview({ report }: { report: import("@/lib/reports/analyze").ReportData }) {
+  const workloadBadgeClass: Record<string, string> = {
+    ringan: "bg-sky-100 text-sky-800",
+    seimbang: "bg-emerald-100 text-emerald-800",
+    berat: "bg-amber-100 text-amber-800",
+    overload: "bg-rose-100 text-rose-800",
+  };
+
+  return (
+    <div className="grid gap-4">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm">Ringkasan Organisasi</CardTitle>
+          <CardDescription className="text-xs">
+            Periode {formatDate(report.range.from)} – {formatDate(report.range.to)}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <MetricCard label="Total Target" value={report.org.totalTargets} icon={ClipboardList} tone="indigo" />
+            <MetricCard label="Selesai" value={report.org.completed} icon={CheckCircle2} tone="emerald" />
+            <MetricCard label="Overdue" value={report.org.overdue} icon={AlertTriangle} tone="rose" />
+            <MetricCard label="Completion" value={`${report.org.completionRate}%`} icon={BarChart3} tone="amber" />
+          </div>
+          <div className="rounded-xl border border-border/60 bg-white/70 p-3 text-sm leading-relaxed text-foreground">
+            {report.orgNarrative.split("\n\n").map((p, i) => (
+              <p key={i} className={cn(i > 0 && "mt-2")}>{p}</p>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm">Progres per Tim</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-2">
+          {report.teams.map((team) => (
+            <div key={team.team} className="grid gap-1">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span className="font-medium">{team.team}</span>
+                <div className="flex items-center gap-2">
+                  <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", workloadBadgeClass[team.workloadStatus])}>
+                    {team.workloadStatus}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {team.completed}/{team.totalTargets} · {team.completionRate}%
+                  </span>
+                </div>
+              </div>
+              <div className="h-2.5 overflow-hidden rounded-full bg-muted">
+                <div
+                  className={cn(
+                    "h-full rounded-full",
+                    team.completionRate >= 70 ? "bg-emerald-500" : team.completionRate >= 40 ? "bg-indigo-500" : "bg-rose-500",
+                  )}
+                  style={{ width: `${team.completionRate}%` }}
+                />
+              </div>
+              {team.narrative && (
+                <p className="text-xs leading-relaxed text-muted-foreground">{team.narrative}</p>
+              )}
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      {report.members.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm">Kinerja Anggota</CardTitle>
+            <CardDescription className="text-xs">
+              {report.members.length} anggota dengan target aktif dalam periode terpilih.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nama</TableHead>
+                  <TableHead>Tim</TableHead>
+                  <TableHead className="text-right">Active</TableHead>
+                  <TableHead className="text-right">Selesai</TableHead>
+                  <TableHead className="text-right">Overdue</TableHead>
+                  <TableHead className="text-right">Completion</TableHead>
+                  <TableHead>Beban</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {report.members.map((m) => (
+                  <TableRow key={m.id}>
+                    <TableCell className="font-medium">{m.nama}</TableCell>
+                    <TableCell className="text-xs">{m.team}</TableCell>
+                    <TableCell className="text-right text-xs">{m.activeTargets}</TableCell>
+                    <TableCell className="text-right text-xs">{m.completed}</TableCell>
+                    <TableCell className="text-right text-xs text-rose-700">{m.overdue}</TableCell>
+                    <TableCell className="text-right text-xs font-semibold">{m.completionRate}%</TableCell>
+                    <TableCell>
+                      <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", workloadBadgeClass[m.workloadStatus])}>
+                        {m.workloadStatus}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm">Rekomendasi Kebijakan</CardTitle>
+          <CardDescription className="text-xs">
+            Disusun otomatis berdasarkan distribusi target & beban kerja.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ul className="grid gap-2 text-sm">
+            {report.recommendations.map((rec, i) => (
+              <li key={i} className="flex gap-2">
+                <span className="mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-500" aria-hidden="true" />
+                <span>{rec}</span>
+              </li>
+            ))}
+          </ul>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 type AppNotification = {
   id: string;
   title: string;
@@ -2729,6 +3046,7 @@ function NotificationBell({
     projects: "Proyek",
     kanban: "Kanban",
     journal: "Tugas Harian",
+    report: "Report",
   };
 
   return (
@@ -3613,7 +3931,13 @@ function readActiveView(): View | null {
   if (typeof window === "undefined") return null;
   try {
     const value = window.localStorage.getItem(ACTIVE_VIEW_KEY);
-    if (value === "dashboard" || value === "projects" || value === "kanban" || value === "journal") {
+    if (
+      value === "dashboard" ||
+      value === "projects" ||
+      value === "kanban" ||
+      value === "journal" ||
+      value === "report"
+    ) {
       return value;
     }
     return null;
