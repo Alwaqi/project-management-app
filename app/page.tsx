@@ -1940,6 +1940,8 @@ function ProjectDialog({
   const [speakerUserIds, setSpeakerUserIds] = useState<string[]>(
     () => project?.speaker_user_ids ?? [],
   );
+  const [speakerDropdownOpen, setSpeakerDropdownOpen] = useState(false);
+  const [speakerSearch, setSpeakerSearch] = useState("");
 
   useEffect(() => {
     if (!open || !isEduLeader) return;
@@ -1966,6 +1968,12 @@ function ProjectDialog({
 
   const speakerVisible =
     isEduLeader && category !== null && projectCategoriesRequireSpeaker.includes(category);
+
+  useEffect(() => {
+    if (speakerVisible) return;
+    setSpeakerDropdownOpen(false);
+    setSpeakerSearch("");
+  }, [speakerVisible]);
 
   async function handleAddClient() {
     const nama = clientNamaNew.trim();
@@ -2002,6 +2010,25 @@ function ProjectDialog({
       prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId],
     );
   }
+  const selectedSpeakerUsers = useMemo(() => {
+    const selected = new Set(speakerUserIds);
+    return [...users]
+      .filter((candidate) => selected.has(candidate.id))
+      .sort((a, b) => a.nama.localeCompare(b.nama));
+  }, [speakerUserIds, users]);
+  const filteredSpeakerUsers = useMemo(() => {
+    const query = speakerSearch.trim().toLowerCase();
+    return [...users]
+      .filter((candidate) => {
+        if (!query) return true;
+        return (
+          candidate.nama.toLowerCase().includes(query) ||
+          candidate.email.toLowerCase().includes(query) ||
+          candidate.team_type.toLowerCase().includes(query)
+        );
+      })
+      .sort((a, b) => a.nama.localeCompare(b.nama));
+  }, [speakerSearch, users]);
   const targetItems = useMemo(() => normalizeTargetRows(targetRows), [targetRows]);
   const targetCount = targetItems.length || project?.target_tugas || 0;
   const computedProjectDeadline = getProjectDeadlineFromTargets(targetItems) ?? project?.deadline ?? null;
@@ -2253,34 +2280,118 @@ function ProjectDialog({
                     Pilih satu atau lebih anggota yang berperan sebagai pemateri/asesor untuk
                     kategori {category}.
                   </p>
-                  <div className="mt-1 flex flex-wrap gap-2">
-                    {users.length === 0 ? (
-                      <span className="text-xs text-muted-foreground">
-                        Belum ada user yang dapat dipilih.
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setSpeakerDropdownOpen((current) => !current)}
+                      className="flex min-h-10 w-full items-center justify-between gap-3 rounded-md border border-input bg-background px-3 py-2 text-left text-sm ring-offset-background transition-colors hover:bg-muted/40 focus:outline-none focus:ring-2 focus:ring-ring"
+                    >
+                      <span className="min-w-0 flex-1">
+                        {selectedSpeakerUsers.length === 0 ? (
+                          <span className="text-muted-foreground">
+                            Pilih pemateri/asesor
+                          </span>
+                        ) : (
+                          <span className="flex flex-wrap gap-1.5">
+                            {selectedSpeakerUsers.slice(0, 3).map((speaker) => (
+                              <span
+                                key={speaker.id}
+                                className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-800"
+                              >
+                                {speaker.nama}
+                              </span>
+                            ))}
+                            {selectedSpeakerUsers.length > 3 ? (
+                              <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                                +{selectedSpeakerUsers.length - 3} lainnya
+                              </span>
+                            ) : null}
+                          </span>
+                        )}
                       </span>
-                    ) : (
-                      [...users]
-                        .sort((a, b) => a.nama.localeCompare(b.nama))
-                        .map((candidate) => {
-                          const checked = speakerUserIds.includes(candidate.id);
-                          return (
-                            <button
+                      <ChevronDown
+                        className={cn(
+                          "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+                          speakerDropdownOpen && "rotate-180",
+                        )}
+                        aria-hidden="true"
+                      />
+                    </button>
+
+                    {speakerDropdownOpen ? (
+                      <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-50 overflow-hidden rounded-xl border border-border/70 bg-white shadow-xl">
+                        <div className="border-b border-border/60 p-2">
+                          <Input
+                            value={speakerSearch}
+                            onChange={(event) => setSpeakerSearch(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") event.preventDefault();
+                            }}
+                            placeholder="Cari nama, email, atau tim..."
+                            className="h-9"
+                          />
+                        </div>
+                        <div className="max-h-64 overflow-y-auto p-1">
+                          {filteredSpeakerUsers.length === 0 ? (
+                            <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+                              Tidak ada user yang cocok.
+                            </div>
+                          ) : (
+                            filteredSpeakerUsers.map((candidate) => {
+                              const checked = speakerUserIds.includes(candidate.id);
+                              return (
+                                <label
+                                  key={candidate.id}
+                                  className={cn(
+                                    "flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors hover:bg-muted/50",
+                                    checked && "bg-violet-50 text-violet-900",
+                                  )}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => toggleSpeaker(candidate.id)}
+                                    className="h-4 w-4 rounded border-border text-violet-600"
+                                  />
+                                  <span className="min-w-0 flex-1">
+                                    <span className="block truncate font-medium">
+                                      {candidate.nama}
+                                    </span>
+                                    <span className="block truncate text-xs text-muted-foreground">
+                                      {candidate.team_type} · {candidate.email}
+                                    </span>
+                                  </span>
+                                </label>
+                              );
+                            })
+                          )}
+                        </div>
+                        <div className="flex items-center justify-between gap-2 border-t border-border/60 px-3 py-2">
+                          <span className="text-xs text-muted-foreground">
+                            {selectedSpeakerUsers.length} dipilih
+                          </span>
+                          <div className="flex items-center gap-2">
+                            {selectedSpeakerUsers.length > 0 ? (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setSpeakerUserIds([])}
+                              >
+                                Bersihkan
+                              </Button>
+                            ) : null}
+                            <Button
                               type="button"
-                              key={candidate.id}
-                              onClick={() => toggleSpeaker(candidate.id)}
-                              className={cn(
-                                "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                                checked
-                                  ? "border-violet-300 bg-violet-100 text-violet-800"
-                                  : "border-border/60 bg-white text-muted-foreground hover:bg-muted/50",
-                              )}
+                              size="sm"
+                              onClick={() => setSpeakerDropdownOpen(false)}
                             >
-                              {checked ? "✓ " : "+ "}
-                              {candidate.nama}
-                            </button>
-                          );
-                        })
-                    )}
+                              Selesai
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               ) : null}
@@ -3096,90 +3207,157 @@ function ManagementReportView({
               </>
             )}
           </div>
+          {report && (
+            <ReportPreview
+              report={report}
+              scope={isEduLeaderView ? "education" : "management"}
+            />
+          )}
         </CardContent>
       </Card>
-
-      {report && <ReportPreview report={report} />}
     </div>
   );
 }
 
-function ReportPreview({ report }: { report: import("@/lib/reports/analyze").ReportData }) {
+function ReportPreview({
+  report,
+  scope,
+}: {
+  report: import("@/lib/reports/analyze").ReportData;
+  scope: "management" | "education";
+}) {
   const workloadBadgeClass: Record<string, string> = {
     ringan: "bg-sky-100 text-sky-800",
     seimbang: "bg-emerald-100 text-emerald-800",
     berat: "bg-amber-100 text-amber-800",
     overload: "bg-rose-100 text-rose-800",
   };
+  const isEducationReport = scope === "education";
+  const visibleMembers = isEducationReport
+    ? report.members.filter((member) => member.team === "Tim Edukasi")
+    : report.members;
+  const visibleTopPerformers = report.spotlights.topPerformers.filter((member) =>
+    isEducationReport ? member.team === "Tim Edukasi" : true,
+  );
+  const visibleOverdueRisks = report.spotlights.overdueRisks.filter((member) =>
+    isEducationReport ? member.team === "Tim Edukasi" : true,
+  );
+  const visibleOverloadedMembers = report.spotlights.overloadedMembers.filter((member) =>
+    isEducationReport ? member.team === "Tim Edukasi" : true,
+  );
+  const activeCategories = report.byCategory.filter((category) => category.total > 0);
+  const reportTitle = isEducationReport
+    ? "Insight Laporan Tim Edukasi"
+    : "Insight Laporan Organisasi";
 
   return (
-    <div className="grid gap-4">
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm">Ringkasan Organisasi</CardTitle>
-          <CardDescription className="text-xs">
-            Periode {formatDate(report.range.from)} – {formatDate(report.range.to)}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <MetricCard label="Total Target" value={report.org.totalTargets} icon={ClipboardList} tone="indigo" />
-            <MetricCard label="Selesai" value={report.org.completed} icon={CheckCircle2} tone="emerald" />
-            <MetricCard label="Overdue" value={report.org.overdue} icon={AlertTriangle} tone="rose" />
-            <MetricCard label="Completion" value={`${report.org.completionRate}%`} icon={BarChart3} tone="amber" />
+    <section className="grid gap-6 border-t border-border/60 pt-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-base font-semibold">{reportTitle}</h3>
+          <p className="text-sm text-muted-foreground">
+            Periode {formatDate(report.range.from)} - {formatDate(report.range.to)}
+          </p>
+        </div>
+        <Badge variant="outline" className="w-fit">
+          {isEducationReport ? "Leader Tim Edukasi" : "Manajemen"}
+        </Badge>
+      </div>
+
+        <section className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+          <ReportMetric label="Total Target" value={report.org.totalTargets} tone="indigo" />
+          <ReportMetric label="Selesai" value={report.org.completed} tone="emerald" />
+          <ReportMetric label="Overdue" value={report.org.overdue} tone="rose" />
+          <ReportMetric label="Completion" value={`${report.org.completionRate}%`} tone="amber" />
+        </section>
+
+        <section className="rounded-xl border border-border/60 bg-white/75 p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-amber-500" aria-hidden="true" />
+            <h3 className="text-sm font-semibold">Narasi Insight</h3>
           </div>
-          <div className="rounded-xl border border-border/60 bg-white/70 p-3 text-sm leading-relaxed text-foreground">
-            {report.orgNarrative.split("\n\n").map((p, i) => (
-              <p key={i} className={cn(i > 0 && "mt-2")}>{p}</p>
+          <div className="space-y-2 text-sm leading-relaxed text-foreground">
+            {report.orgNarrative.split("\n\n").map((paragraph, index) => (
+              <p key={index}>{paragraph}</p>
             ))}
           </div>
-        </CardContent>
-      </Card>
+        </section>
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm">Progres per Tim</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-2">
-          {report.teams.map((team) => (
-            <div key={team.team} className="grid gap-1">
-              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                <span className="font-medium">{team.team}</span>
-                <div className="flex items-center gap-2">
-                  <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", workloadBadgeClass[team.workloadStatus])}>
-                    {team.workloadStatus}
-                  </span>
-                  <span className="text-muted-foreground">
-                    {team.completed}/{team.totalTargets} · {team.completionRate}%
-                  </span>
-                </div>
-              </div>
-              <div className="h-2.5 overflow-hidden rounded-full bg-muted">
-                <div
-                  className={cn(
-                    "h-full rounded-full",
-                    team.completionRate >= 70 ? "bg-emerald-500" : team.completionRate >= 40 ? "bg-indigo-500" : "bg-rose-500",
-                  )}
-                  style={{ width: `${team.completionRate}%` }}
-                />
-              </div>
-              {team.narrative && (
-                <p className="text-xs leading-relaxed text-muted-foreground">{team.narrative}</p>
-              )}
+        <section className="grid gap-3 lg:grid-cols-3">
+          <InsightPanel
+            title="Performa Teratas"
+            emptyText="Belum ada anggota dengan completion tinggi pada periode ini."
+            items={visibleTopPerformers.map(
+              (member) => `${member.nama} - ${member.completionRate}% completion`,
+            )}
+          />
+          <InsightPanel
+            title="Risiko Overdue"
+            emptyText="Tidak ada risiko overdue dominan pada anggota yang terlihat."
+            items={visibleOverdueRisks.map(
+              (member) => `${member.nama} - ${member.overdue} target overdue`,
+            )}
+          />
+          <InsightPanel
+            title="Beban Kerja"
+            emptyText="Beban anggota terlihat terkendali."
+            items={visibleOverloadedMembers.map(
+              (member) => `${member.nama} - ${member.activeTargets} target aktif`,
+            )}
+          />
+        </section>
+
+        {!isEducationReport && (
+          <section className="grid gap-3 rounded-xl border border-border/60 bg-white/75 p-4">
+            <div>
+              <h3 className="text-sm font-semibold">Progres per Tim</h3>
+              <p className="text-xs text-muted-foreground">
+                Ringkasan ini hanya tampil untuk Manajemen agar Leader Tim Edukasi tetap fokus pada proyek edukasi.
+              </p>
             </div>
-          ))}
-        </CardContent>
-      </Card>
+            <div className="grid gap-3">
+              {report.teams.map((team) => (
+                <div key={team.team} className="grid gap-1.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <span className="font-medium">{team.team}</span>
+                    <div className="flex items-center gap-2">
+                      <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", workloadBadgeClass[team.workloadStatus])}>
+                        {team.workloadStatus}
+                      </span>
+                      <span className="text-muted-foreground">
+                        {team.completed}/{team.totalTargets} - {team.completionRate}%
+                      </span>
+                    </div>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className={cn(
+                        "h-full rounded-full",
+                        team.completionRate >= 70 ? "bg-emerald-500" : team.completionRate >= 40 ? "bg-indigo-500" : "bg-rose-500",
+                      )}
+                      style={{ width: `${team.completionRate}%` }}
+                    />
+                  </div>
+                  {team.narrative && (
+                    <p className="text-xs leading-relaxed text-muted-foreground">{team.narrative}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
-      {report.members.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm">Kinerja Anggota</CardTitle>
-            <CardDescription className="text-xs">
-              {report.members.length} anggota dengan target aktif dalam periode terpilih.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+        {visibleMembers.length > 0 && (
+          <section className="grid gap-3 rounded-xl border border-border/60 bg-white/75 p-4">
+            <div>
+              <h3 className="text-sm font-semibold">
+                {isEducationReport ? "Kinerja Anggota Tim Edukasi" : "Kinerja Anggota"}
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                {visibleMembers.length} anggota dengan target aktif dalam periode terpilih.
+              </p>
+            </div>
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -3193,7 +3371,7 @@ function ReportPreview({ report }: { report: import("@/lib/reports/analyze").Rep
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {report.members.map((m) => (
+                {visibleMembers.map((m) => (
                   <TableRow key={m.id}>
                     <TableCell className="font-medium">{m.nama}</TableCell>
                     <TableCell className="text-xs">{m.team}</TableCell>
@@ -3210,22 +3388,20 @@ function ReportPreview({ report }: { report: import("@/lib/reports/analyze").Rep
                 ))}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
-      )}
+            </div>
+          </section>
+        )}
 
-      {report.byCategory.some((c) => c.total > 0) && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm">Sebaran Kategori Proyek</CardTitle>
-            <CardDescription className="text-xs">
-              Distribusi proyek per kategori (Training, Workshop, dst) dan rata-rata durasi proyek
-              yang sudah selesai.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+        {activeCategories.length > 0 && (
+          <section className="grid gap-3">
+            <div>
+              <h3 className="text-sm font-semibold">Sebaran Kategori Proyek</h3>
+              <p className="text-xs text-muted-foreground">
+                Distribusi proyek per kategori dan rata-rata durasi proyek yang sudah selesai.
+              </p>
+            </div>
             <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
-              {report.byCategory.map((cat) => (
+              {activeCategories.map((cat) => (
                 <div
                   key={cat.category}
                   className="rounded-xl border border-border/60 bg-white/80 p-3"
@@ -3243,79 +3419,73 @@ function ReportPreview({ report }: { report: import("@/lib/reports/analyze").Rep
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
-      )}
+          </section>
+        )}
 
-      {report.byClient.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm">Proyek per Client / Akun</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Client</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
-                  <TableHead className="text-right">Selesai</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {report.byClient.map((row) => (
-                  <TableRow key={row.client}>
-                    <TableCell className="font-medium">{row.client}</TableCell>
-                    <TableCell className="text-right text-xs">{row.total}</TableCell>
-                    <TableCell className="text-right text-xs">{row.selesai}</TableCell>
+        <section className="grid gap-4 lg:grid-cols-2">
+          {report.byClient.length > 0 && (
+            <div className="grid gap-3 rounded-xl border border-border/60 bg-white/75 p-4">
+              <h3 className="text-sm font-semibold">Proyek per Client / Akun</h3>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Client</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="text-right">Selesai</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
+                </TableHeader>
+                <TableBody>
+                  {report.byClient.map((row) => (
+                    <TableRow key={row.client}>
+                      <TableCell className="font-medium">{row.client}</TableCell>
+                      <TableCell className="text-right text-xs">{row.total}</TableCell>
+                      <TableCell className="text-right text-xs">{row.selesai}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
 
-      {report.bySpeaker.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm">Pemateri / Asesor Tersibuk</CardTitle>
-            <CardDescription className="text-xs">
-              Jumlah proyek dengan kategori Training / Workshop / Sertifikasi yang melibatkan tiap
-              pemateri/asesor.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nama</TableHead>
-                  <TableHead>Tim</TableHead>
-                  <TableHead className="text-right">Total Proyek</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {report.bySpeaker.map((row) => (
-                  <TableRow key={row.user_id}>
-                    <TableCell className="font-medium">{row.nama}</TableCell>
-                    <TableCell className="text-xs">{row.team ?? "—"}</TableCell>
-                    <TableCell className="text-right text-xs">{row.total}</TableCell>
+          {report.bySpeaker.length > 0 && (
+            <div className="grid gap-3 rounded-xl border border-border/60 bg-white/75 p-4">
+              <div>
+                <h3 className="text-sm font-semibold">Pemateri / Asesor Tersibuk</h3>
+                <p className="text-xs text-muted-foreground">
+                  Proyek Training, Workshop, dan Sertifikasi yang melibatkan tiap pemateri/asesor.
+                </p>
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nama</TableHead>
+                    <TableHead>Tim</TableHead>
+                    <TableHead className="text-right">Total Proyek</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
+                </TableHeader>
+                <TableBody>
+                  {report.bySpeaker.map((row) => (
+                    <TableRow key={row.user_id}>
+                      <TableCell className="font-medium">{row.nama}</TableCell>
+                      <TableCell className="text-xs">{row.team ?? "—"}</TableCell>
+                      <TableCell className="text-right text-xs">{row.total}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </section>
 
-      {report.projectsDetail.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm">Detail Proyek Periode</CardTitle>
-            <CardDescription className="text-xs">
-              Termasuk kategori, client, pemateri/asesor, tim terlibat, dan durasi pengerjaan.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="overflow-x-auto">
+        {report.projectsDetail.length > 0 && (
+          <section className="grid gap-3 rounded-xl border border-border/60 bg-white/75 p-4">
+            <div>
+              <h3 className="text-sm font-semibold">Detail Proyek Periode</h3>
+              <p className="text-xs text-muted-foreground">
+                Termasuk kategori, client, pemateri/asesor, tim terlibat, dan durasi pengerjaan.
+              </p>
+            </div>
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -3350,18 +3520,17 @@ function ReportPreview({ report }: { report: import("@/lib/reports/analyze").Rep
                 ))}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
-      )}
+            </div>
+          </section>
+        )}
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm">Rekomendasi Kebijakan</CardTitle>
-          <CardDescription className="text-xs">
-            Disusun otomatis berdasarkan distribusi target & beban kerja.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+        <section className="rounded-xl border border-border/60 bg-amber-50/70 p-4">
+          <div className="mb-3">
+            <h3 className="text-sm font-semibold">Rekomendasi Kebijakan</h3>
+            <p className="text-xs text-muted-foreground">
+              Disusun otomatis berdasarkan distribusi target, deadline, dan beban kerja.
+            </p>
+          </div>
           <ul className="grid gap-2 text-sm">
             {report.recommendations.map((rec, i) => (
               <li key={i} className="flex gap-2">
@@ -3370,8 +3539,56 @@ function ReportPreview({ report }: { report: import("@/lib/reports/analyze").Rep
               </li>
             ))}
           </ul>
-        </CardContent>
-      </Card>
+        </section>
+    </section>
+  );
+}
+
+function ReportMetric({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string | number;
+  tone: IconTone;
+}) {
+  const toneClass = iconToneClass[tone];
+  return (
+    <div className="rounded-xl border border-border/60 bg-white/80 p-3">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <div className="mt-2 flex items-end justify-between gap-2">
+        <p className="text-2xl font-semibold">{value}</p>
+        <span className={cn("h-2.5 w-2.5 rounded-full", toneClass.bg)} aria-hidden="true" />
+      </div>
+    </div>
+  );
+}
+
+function InsightPanel({
+  title,
+  emptyText,
+  items,
+}: {
+  title: string;
+  emptyText: string;
+  items: string[];
+}) {
+  return (
+    <div className="rounded-xl border border-border/60 bg-white/75 p-4">
+      <h3 className="text-sm font-semibold">{title}</h3>
+      {items.length > 0 ? (
+        <ul className="mt-3 grid gap-2 text-sm">
+          {items.slice(0, 4).map((item) => (
+            <li key={item} className="flex gap-2">
+              <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-500" aria-hidden="true" />
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-3 text-sm text-muted-foreground">{emptyText}</p>
+      )}
     </div>
   );
 }
