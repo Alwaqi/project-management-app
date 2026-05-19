@@ -579,7 +579,18 @@ export default function Home() {
                 });
               }}
               onUpdateProject={(updatedProject) => {
-                void updateProject(updatedProject, loadWorkspace, showToast);
+                void updateProject(updatedProject, loadWorkspace, showToast, (savedProject) => {
+                  const savedProjectWithProgress: ProjectWithProgress = {
+                    ...savedProject,
+                    progress: getProjectProgress(savedProject, tasks),
+                    total_tugas: getProjectCompletedTaskCount(savedProject, tasks),
+                  };
+                  setProjects((currentProjects) =>
+                    currentProjects.map((item) =>
+                      item.id === savedProject.id ? savedProjectWithProgress : item,
+                    ),
+                  );
+                });
               }}
               onCloseProject={(projectId) => {
                 void closeProject(projectId, loadWorkspace, showToast);
@@ -1376,7 +1387,9 @@ function TeamKpiChart({
                 <div key={target.id} className="flex flex-col gap-1 rounded-md border p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
                     <p className="truncate font-medium">{target.deskripsi}</p>
-                    <p className="text-xs text-muted-foreground">{project.nama_proyek}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatProjectDisplayName(project)}
+                    </p>
                   </div>
                   <Badge variant={target.deadline && target.deadline < today ? "warning" : "outline"}>
                     {target.deadline ? formatDate(target.deadline) : "Tanpa deadline"}
@@ -1578,7 +1591,7 @@ function GanttChart({
                   <SelectItem value="all">Semua proyek</SelectItem>
                   {visibleProjects.map((project) => (
                     <SelectItem key={project.id} value={project.id}>
-                      {project.nama_proyek}
+                      {formatProjectDisplayName(project)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1638,7 +1651,7 @@ function GanttChart({
                           <span className="min-w-0">
                             <span className="block truncate text-xs font-medium">{item.target.deskripsi}</span>
                             <span className="block truncate text-[10px] text-muted-foreground">
-                              {item.project.nama_proyek}
+                              {formatProjectDisplayName(item.project)}
                             </span>
                           </span>
                         </button>
@@ -2685,15 +2698,18 @@ function JournalView({
                   <SelectTrigger>
                     <SelectValue placeholder="Pilih proyek" />
                   </SelectTrigger>
-                  <SelectContent>
-                    {selectableProjects.map((project) => (
-                      <SelectItem key={project.id} value={project.id}>
-                        {project.nama_proyek}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                <SelectContent>
+                  {selectableProjects.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      {formatProjectDisplayName(project)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {selectedProjectData ? (
+                <ProjectInlineInfo project={selectedProjectData} />
+              ) : null}
+            </div>
 
               {selectedProjectData ? (
                 <div className="grid gap-3">
@@ -3062,9 +3078,9 @@ function KanbanView({
                 <SelectContent>
                   <SelectItem value="all">Semua proyek</SelectItem>
                   {visibleProjects.map((project) => (
-                    <SelectItem key={project.id} value={project.id}>
-                      {project.nama_proyek}
-                    </SelectItem>
+                      <SelectItem key={project.id} value={project.id}>
+                        {formatProjectDisplayName(project)}
+                      </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -3106,7 +3122,9 @@ function KanbanView({
                             isCompleted={isCompleted}
                           />
                         </div>
-                        <p className="text-xs text-muted-foreground">{project.nama_proyek}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatProjectDisplayName(project)}
+                        </p>
                         <p className="text-xs text-muted-foreground">
                           PIC: {getAssignedUserName(target.assigned_user_id, users)}
                         </p>
@@ -3136,6 +3154,9 @@ function KanbanView({
 function ProjectTeamBadges({ project }: { project: Project }) {
   return (
     <div className="flex flex-wrap items-center gap-1">
+      <Badge variant="secondary" className="bg-slate-100 text-[10px] text-slate-700">
+        Client: {project.client_nama ?? "-"}
+      </Badge>
       <Badge variant="default" className="bg-indigo-600 text-white text-[10px]">
         Owner: {project.owner_team}
       </Badge>
@@ -3147,6 +3168,27 @@ function ProjectTeamBadges({ project }: { project: Project }) {
         >
           + {team}
         </Badge>
+      ))}
+    </div>
+  );
+}
+
+function ProjectInlineInfo({ project }: { project: Project }) {
+  return (
+    <div className="flex flex-wrap gap-1.5 text-xs text-muted-foreground">
+      <span className="rounded-full border border-border/60 bg-white px-2 py-0.5">
+        Client: {project.client_nama ?? "-"}
+      </span>
+      <span className="rounded-full border border-border/60 bg-white px-2 py-0.5">
+        Owner: {project.owner_team}
+      </span>
+      {project.collaborator_teams.map((team) => (
+        <span
+          key={team}
+          className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-violet-800"
+        >
+          + {team}
+        </span>
       ))}
     </div>
   );
@@ -4454,6 +4496,7 @@ function DeadlineWatchlist({
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <p className="font-medium">{project.nama_proyek}</p>
+                    <ProjectTeamBadges project={project} />
                     <p className="mt-1 text-xs text-muted-foreground">
                       {project.deadline ? `Deadline ${formatDate(project.deadline)}` : "Deadline belum diatur"}
                     </p>
@@ -4689,7 +4732,7 @@ function ActivityItem({
         <span
           className={cn("h-2 w-2 rounded-full", project?.status === "Selesai" ? "bg-emerald-500" : "bg-primary")}
         />
-        {project?.nama_proyek ?? "Proyek tidak ditemukan"}
+        {project ? formatProjectDisplayName(project) : "Proyek tidak ditemukan"}
       </div>
     </div>
   );
@@ -4898,6 +4941,12 @@ function formatTargetSchedule(target: Project["target_detail_tugas"][number]) {
   return "Jadwal belum diatur";
 }
 
+function formatProjectDisplayName(project: Project) {
+  return project.client_nama
+    ? `${project.nama_proyek} · Client: ${project.client_nama}`
+    : `${project.nama_proyek} · Client: -`;
+}
+
 const CONTENT_NOTE_PREFIX = "__PROTRACK_CONTENT_NOTE_V1__";
 
 function serializeContentNote(note: ContentNote) {
@@ -5022,6 +5071,7 @@ async function updateProject(
   project: Project,
   refresh: () => Promise<unknown>,
   showToast: (message: string) => void,
+  onUpdated?: (project: Project) => void,
 ) {
   try {
     const body: Record<string, unknown> = {
@@ -5044,12 +5094,13 @@ async function updateProject(
     if (project.speaker_user_ids && project.speaker_user_ids.length > 0) {
       body.speaker_user_ids = project.speaker_user_ids;
     }
-    await fetchJson<Project>(`/api/projects/${project.id}`, {
+    const savedProject = await fetchJson<Project>(`/api/projects/${project.id}`, {
       method: "PATCH",
       body: JSON.stringify(body),
     });
-    await refresh();
+    onUpdated?.(savedProject);
     showToast("Perubahan proyek tersimpan.");
+    void refresh();
   } catch (error) {
     showToast(getErrorMessage(error));
   }
