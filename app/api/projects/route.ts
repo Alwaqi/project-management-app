@@ -81,8 +81,13 @@ export async function GET(request: Request) {
       });
     } else {
       visibleProjectRows = projectRows.filter((row) => {
+        const collabs = collaboratorTeamsByProject.get(row.id) ?? [];
         const targets = targetTasksByProject.get(row.id) ?? [];
-        return targets.some((target) => target.assignedUserId === currentUser.id);
+        return (
+          row.ownerTeam === currentUser.team_type ||
+          collabs.includes(currentUser.team_type) ||
+          targets.some((target) => target.assignedUserId === currentUser.id)
+        );
       });
     }
 
@@ -91,7 +96,9 @@ export async function GET(request: Request) {
       const allTargets = targetTasksByProject.get(row.id) ?? [];
       const targetsForUser = isPrivileged
         ? allTargets
-        : allTargets.filter((target) => target.assignedUserId === currentUser.id);
+        : allTargets.filter(
+            (target) => !target.assignedUserId || target.assignedUserId === currentUser.id,
+          );
       return toProjectDto(
         row,
         targetsForUser,
@@ -346,4 +353,3 @@ function getProjectDeadline(
     .sort()
     .at(-1) ?? null;
 }
-

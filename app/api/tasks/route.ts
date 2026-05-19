@@ -5,9 +5,9 @@ import { db } from "@/lib/db";
 import { projectTargetTask, task } from "@/lib/db/schema";
 import {
   canAccessAssignedTarget,
-  canLeaderAccessProject,
+  canUserAccessProject,
   forbiddenResponse,
-  getAccessibleProjectIdsForLeader,
+  getAccessibleProjectIdsForUser,
   getProjectAccessContext,
   getRequestUser,
   unauthorizedResponse,
@@ -26,23 +26,14 @@ export async function GET(request: Request) {
     const currentUser = await getRequestUser(request);
     if (!currentUser) return unauthorizedResponse();
 
-    let tasks;
-    if (currentUser.role === "Leader") {
-      const accessibleProjectIds = await getAccessibleProjectIdsForLeader(currentUser);
-      tasks = accessibleProjectIds && accessibleProjectIds.length > 0
-        ? await db
-            .select()
-            .from(task)
-            .where(inArray(task.projectId, accessibleProjectIds))
-            .orderBy(desc(task.createdAt))
-        : [];
-    } else {
-      tasks = await db
-        .select()
-        .from(task)
-        .where(eq(task.userId, currentUser.id))
-        .orderBy(desc(task.createdAt));
-    }
+    const accessibleProjectIds = await getAccessibleProjectIdsForUser(currentUser);
+    const tasks = accessibleProjectIds.length > 0
+      ? await db
+          .select()
+          .from(task)
+          .where(inArray(task.projectId, accessibleProjectIds))
+          .orderBy(desc(task.createdAt))
+      : [];
 
     return NextResponse.json({
       data: tasks.map(toTaskDto),
@@ -62,11 +53,9 @@ export async function POST(request: Request) {
 
     const payload = taskCreateSchema.parse(await request.json());
 
-    if (currentUser.role === "Leader") {
-      const accessCtx = await getProjectAccessContext(payload.project_id);
-      if (!accessCtx || !canLeaderAccessProject(accessCtx.ownerTeam, accessCtx.collaboratorTeams, currentUser)) {
-        return forbiddenResponse("Proyek ini bukan milik tim Anda");
-      }
+    const accessCtx = await getProjectAccessContext(payload.project_id);
+    if (!accessCtx || !canUserAccessProject(accessCtx.ownerTeam, accessCtx.collaboratorTeams, currentUser)) {
+      return forbiddenResponse("Proyek ini bukan milik tim Anda");
     }
 
     const targetTask = payload.target_task_id
@@ -139,11 +128,9 @@ export async function PATCH(request: Request) {
 
     const payload = taskStatusUpdateSchema.parse(await request.json());
 
-    if (currentUser.role === "Leader") {
-      const accessCtx = await getProjectAccessContext(payload.project_id);
-      if (!accessCtx || !canLeaderAccessProject(accessCtx.ownerTeam, accessCtx.collaboratorTeams, currentUser)) {
-        return forbiddenResponse("Proyek ini bukan milik tim Anda");
-      }
+    const accessCtx = await getProjectAccessContext(payload.project_id);
+    if (!accessCtx || !canUserAccessProject(accessCtx.ownerTeam, accessCtx.collaboratorTeams, currentUser)) {
+      return forbiddenResponse("Proyek ini bukan milik tim Anda");
     }
 
     const targetTask = await getTargetTask(payload.target_task_id, payload.project_id);
@@ -223,11 +210,9 @@ export async function DELETE(request: Request) {
 
     const payload = taskDeleteSchema.parse(await request.json());
 
-    if (currentUser.role === "Leader") {
-      const accessCtx = await getProjectAccessContext(payload.project_id);
-      if (!accessCtx || !canLeaderAccessProject(accessCtx.ownerTeam, accessCtx.collaboratorTeams, currentUser)) {
-        return forbiddenResponse("Proyek ini bukan milik tim Anda");
-      }
+    const accessCtx = await getProjectAccessContext(payload.project_id);
+    if (!accessCtx || !canUserAccessProject(accessCtx.ownerTeam, accessCtx.collaboratorTeams, currentUser)) {
+      return forbiddenResponse("Proyek ini bukan milik tim Anda");
     }
 
     const targetTask = await getTargetTask(payload.target_task_id, payload.project_id);

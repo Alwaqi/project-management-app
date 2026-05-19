@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import {
   project,
   projectCollaboratorTeam,
+  projectTargetTask,
   user,
 } from "@/lib/db/schema";
 import type { Role, TeamType } from "@/lib/domain";
@@ -63,6 +64,18 @@ export function canLeaderAccessProject(
   );
 }
 
+export function canUserAccessProject(
+  ownerTeam: TeamType,
+  collaboratorTeams: TeamType[],
+  currentUser: RequestUser,
+) {
+  if (currentUser.role === "Manajemen") return true;
+  return (
+    ownerTeam === currentUser.team_type ||
+    collaboratorTeams.includes(currentUser.team_type)
+  );
+}
+
 export function canAccessAssignedTarget(
   assignedUserId: string | null,
   currentUser: RequestUser,
@@ -92,13 +105,13 @@ export async function getProjectAccessContext(projectId: string) {
 }
 
 export async function getAccessibleProjectIdsForLeader(currentUser: RequestUser) {
+  return getAccessibleProjectIdsForUser(currentUser);
+}
+
+export async function getAccessibleProjectIdsForUser(currentUser: RequestUser) {
   if (currentUser.role === "Manajemen") {
     const allRows = await db.select({ id: project.id }).from(project);
     return allRows.map((r) => r.id);
-  }
-
-  if (currentUser.role !== "Leader") {
-    return null;
   }
 
   const ownedRows = await db
@@ -111,7 +124,20 @@ export async function getAccessibleProjectIdsForLeader(currentUser: RequestUser)
     .from(projectCollaboratorTeam)
     .where(eq(projectCollaboratorTeam.teamType, currentUser.team_type));
 
-  return Array.from(new Set([...ownedRows.map((r) => r.id), ...collabRows.map((r) => r.id)]));
+  if (currentUser.role === "Leader") {
+    return Array.from(new Set([...ownedRows.map((r) => r.id), ...collabRows.map((r) => r.id)]));
+  }
+
+  const assignedRows = await db
+    .select({ id: projectTargetTask.projectId })
+    .from(projectTargetTask)
+    .where(eq(projectTargetTask.assignedUserId, currentUser.id));
+
+  return Array.from(new Set([
+    ...ownedRows.map((r) => r.id),
+    ...collabRows.map((r) => r.id),
+    ...assignedRows.map((r) => r.id),
+  ]));
 }
 
 export async function isTeamMemberOfProject(
@@ -153,4 +179,3 @@ export async function getAssignableUserIdsForProject(projectId: string) {
 
   return new Set(rows.map((row) => row.id));
 }
-
