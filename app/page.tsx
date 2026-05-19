@@ -4705,39 +4705,74 @@ function ContentNotePreview({
   compact?: boolean;
 }) {
   if (!note.text && note.assets.length === 0) return null;
+  const isLongText = note.text.length > 360;
+  const previewText = isLongText ? `${note.text.slice(0, 360).trim()}...` : note.text;
+  const shouldCollapse = !compact && (isLongText || note.assets.length > 0);
 
   return (
     <div className="grid gap-3 rounded-lg border border-emerald-200 bg-white/80 p-3 text-xs text-emerald-900">
-      {note.text ? (
+      {compact ? (
+        note.text ? (
+          <div>
+            <span className="font-medium">{label}: </span>
+            <p className="mt-1 whitespace-pre-wrap leading-relaxed">{note.text}</p>
+          </div>
+        ) : null
+      ) : (
         <div>
           <span className="font-medium">{label}: </span>
-          <p className="mt-1 whitespace-pre-wrap leading-relaxed">{note.text}</p>
+          {note.text ? (
+            <p className="mt-1 whitespace-pre-wrap leading-relaxed">{previewText}</p>
+          ) : (
+            <p className="mt-1 text-muted-foreground">Materi hanya berisi aset gambar.</p>
+          )}
+          {note.assets.length > 0 ? (
+            <p className="mt-2 text-[11px] font-medium text-emerald-700">
+              {note.assets.length} referensi gambar tersimpan
+            </p>
+          ) : null}
         </div>
-      ) : null}
-      {!compact && note.assets.length > 0 ? (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {note.assets.map((asset) => (
-            <a
-              key={asset.id}
-              href={asset.dataUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="overflow-hidden rounded-lg border bg-white transition-opacity hover:opacity-90"
-            >
-              <Image
-                src={asset.dataUrl}
-                alt={asset.name}
-                width={240}
-                height={96}
-                unoptimized
-                className="h-24 w-full object-cover"
-              />
-              <span className="block truncate px-2 py-1.5 text-[11px] text-muted-foreground">
-                {asset.name}
-              </span>
-            </a>
-          ))}
-        </div>
+      )}
+      {shouldCollapse ? (
+        <details className="group rounded-lg border border-emerald-200 bg-emerald-50/60">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs font-semibold text-emerald-800">
+            <span>Expand materi lengkap</span>
+            <ChevronDown
+              className="h-4 w-4 transition-transform group-open:rotate-180"
+              aria-hidden="true"
+            />
+          </summary>
+          <div className="grid gap-3 border-t border-emerald-200 p-3">
+            {isLongText ? (
+              <p className="whitespace-pre-wrap leading-relaxed">{note.text}</p>
+            ) : null}
+            {note.assets.length > 0 ? (
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {note.assets.map((asset) => (
+                  <a
+                    key={asset.id}
+                    href={asset.dataUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="overflow-hidden rounded-lg border bg-white transition-opacity hover:opacity-90"
+                  >
+                    <Image
+                      src={asset.dataUrl}
+                      alt={asset.name}
+                      width={240}
+                      height={96}
+                      unoptimized
+                      className="h-24 w-full object-cover"
+                    />
+                    <span className="block truncate px-2 py-1.5 text-[11px] text-muted-foreground">
+                      {asset.name}
+                    </span>
+                  </a>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </details>
       ) : null}
     </div>
   );
@@ -5011,7 +5046,7 @@ async function updateProject(
     };
     if (project.category !== undefined) body.category = project.category;
     if (project.client_id !== undefined) body.client_id = project.client_id;
-    if (project.speaker_user_ids !== undefined) {
+    if (project.speaker_user_ids && project.speaker_user_ids.length > 0) {
       body.speaker_user_ids = project.speaker_user_ids;
     }
     await fetchJson<Project>(`/api/projects/${project.id}`, {

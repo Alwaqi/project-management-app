@@ -149,7 +149,11 @@ export async function PATCH(request: Request, context: RouteContext) {
         "Field kategori dan client hanya untuk Leader Tim Edukasi atau Leader Tim Marketing dan Konten",
       );
     }
-    if (payload.speaker_user_ids !== undefined && !isEducationLeader(currentUser)) {
+    if (
+      payload.speaker_user_ids !== undefined &&
+      payload.speaker_user_ids.length > 0 &&
+      !isEducationLeader(currentUser)
+    ) {
       return forbiddenResponse("Pemateri/asesor hanya untuk Leader Tim Edukasi");
     }
 
