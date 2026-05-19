@@ -4705,9 +4705,7 @@ function ContentNotePreview({
   compact?: boolean;
 }) {
   if (!note.text && note.assets.length === 0) return null;
-  const isLongText = note.text.length > 360;
-  const previewText = isLongText ? `${note.text.slice(0, 360).trim()}...` : note.text;
-  const shouldCollapse = !compact && (isLongText || note.assets.length > 0);
+  const shouldCollapse = !compact && (Boolean(note.text) || note.assets.length > 0);
 
   return (
     <div className="grid gap-3 rounded-lg border border-emerald-200 bg-white/80 p-3 text-xs text-emerald-900">
@@ -4721,16 +4719,13 @@ function ContentNotePreview({
       ) : (
         <div>
           <span className="font-medium">{label}: </span>
-          {note.text ? (
-            <p className="mt-1 whitespace-pre-wrap leading-relaxed">{previewText}</p>
-          ) : (
-            <p className="mt-1 text-muted-foreground">Materi hanya berisi aset gambar.</p>
-          )}
-          {note.assets.length > 0 ? (
-            <p className="mt-2 text-[11px] font-medium text-emerald-700">
-              {note.assets.length} referensi gambar tersimpan
-            </p>
-          ) : null}
+          <p className="mt-1 text-muted-foreground">
+            Materi tersimpan. Buka expand untuk melihat isi lengkap.
+          </p>
+          <p className="mt-2 text-[11px] font-medium text-emerald-700">
+            {note.text ? "1 deskripsi/script" : "Tanpa deskripsi/script"}
+            {note.assets.length > 0 ? ` · ${note.assets.length} referensi gambar` : ""}
+          </p>
         </div>
       )}
       {shouldCollapse ? (
@@ -4743,7 +4738,7 @@ function ContentNotePreview({
             />
           </summary>
           <div className="grid gap-3 border-t border-emerald-200 p-3">
-            {isLongText ? (
+            {note.text ? (
               <p className="whitespace-pre-wrap leading-relaxed">{note.text}</p>
             ) : null}
             {note.assets.length > 0 ? (
