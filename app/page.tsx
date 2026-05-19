@@ -77,8 +77,12 @@ import {
   getProjectProgress,
   getProjectTargetCount,
   getTaskPlannedDuration,
+  isEducationLeader,
   isProjectOverdue,
   Project,
+  ProjectCategory,
+  projectCategoriesRequireSpeaker,
+  projectCategoryOptions,
   ProjectStatus,
   Role,
   TeamType,
@@ -1920,6 +1924,7 @@ function ProjectDialog({
 }) {
   const ownerTeam: TeamType = project?.owner_team ?? activeUser.team_type;
   const otherTeams = teamTypeOptions.filter((team) => team !== ownerTeam);
+  const isEduLeader = isEducationLeader(activeUser);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(project?.nama_proyek ?? "");
   const [status, setStatus] = useState<ProjectStatus>(project?.status ?? "Berjalan");
@@ -1929,6 +1934,78 @@ function ProjectDialog({
   const [targetRows, setTargetRows] = useState<TargetDraft[]>(() =>
     getInitialTargetRows(project),
   );
+  const [category, setCategory] = useState<ProjectCategory | null>(project?.category ?? null);
+  const [clientId, setClientId] = useState<string | null>(project?.client_id ?? null);
+  const [clientList, setClientList] = useState<{ id: string; nama: string }[]>([]);
+  const [clientLoading, setClientLoading] = useState(false);
+  const [clientAdding, setClientAdding] = useState(false);
+  const [clientNamaNew, setClientNamaNew] = useState("");
+  const [clientNewSaving, setClientNewSaving] = useState(false);
+  const [speakerUserIds, setSpeakerUserIds] = useState<string[]>(
+    () => project?.speaker_user_ids ?? [],
+  );
+
+  useEffect(() => {
+    if (!open || !isEduLeader) return;
+    let cancelled = false;
+    setClientLoading(true);
+    fetch("/api/clients", { credentials: "include" })
+      .then((res) => (res.ok ? res.json() : Promise.reject(res)))
+      .then((body) => {
+        if (cancelled) return;
+        setClientList(Array.isArray(body?.data) ? body.data : []);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setClientList([]);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setClientLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isEduLeader]);
+
+  const speakerVisible =
+    isEduLeader && category !== null && projectCategoriesRequireSpeaker.includes(category);
+
+  async function handleAddClient() {
+    const nama = clientNamaNew.trim();
+    if (!nama) return;
+    setClientNewSaving(true);
+    try {
+      const res = await fetch("/api/clients", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ nama }),
+      });
+      if (!res.ok) throw new Error("Gagal menambah client");
+      const body = await res.json();
+      const newClient: { id: string; nama: string } | undefined = body?.data;
+      if (newClient) {
+        setClientList((prev) => {
+          const exists = prev.some((c) => c.id === newClient.id);
+          return exists ? prev : [...prev, newClient].sort((a, b) => a.nama.localeCompare(b.nama));
+        });
+        setClientId(newClient.id);
+        setClientAdding(false);
+        setClientNamaNew("");
+      }
+    } catch {
+      // ignore — keep input open so user can retry
+    } finally {
+      setClientNewSaving(false);
+    }
+  }
+
+  function toggleSpeaker(userId: string) {
+    setSpeakerUserIds((prev) =>
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId],
+    );
+  }
   const targetItems = useMemo(() => normalizeTargetRows(targetRows), [targetRows]);
   const targetCount = targetItems.length || project?.target_tugas || 0;
   const computedProjectDeadline = getProjectDeadlineFromTargets(targetItems) ?? project?.deadline ?? null;
@@ -1955,6 +2032,12 @@ function ProjectDialog({
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const finalCategory = isEduLeader ? category : null;
+    const finalClientId = isEduLeader ? clientId : null;
+    const finalSpeakers =
+      isEduLeader && finalCategory && projectCategoriesRequireSpeaker.includes(finalCategory)
+        ? speakerUserIds
+        : [];
     onSubmit({
       id: project?.id ?? `p-${Date.now()}`,
       nama_proyek: name,
@@ -1973,6 +2056,12 @@ function ProjectDialog({
       dibuat_pada: project?.dibuat_pada ?? new Date().toISOString().slice(0, 10),
       owner_team: ownerTeam,
       collaborator_teams: collaboratorTeams,
+      category: finalCategory,
+      client_id: finalClientId,
+      client_nama: finalClientId
+        ? clientList.find((c) => c.id === finalClientId)?.nama ?? null
+        : null,
+      speaker_user_ids: finalSpeakers,
     });
     setOpen(false);
     if (!project) {
@@ -1980,6 +2069,11 @@ function ProjectDialog({
       setStatus("Berjalan");
       setCollaboratorTeams([]);
       setTargetRows([createEmptyTargetDraft()]);
+      setCategory(null);
+      setClientId(null);
+      setClientNamaNew("");
+      setClientAdding(false);
+      setSpeakerUserIds([]);
     }
   };
 
@@ -2067,6 +2161,136 @@ function ProjectDialog({
               })}
             </div>
           </div>
+
+          {isEduLeader ? (
+            <>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div className="grid gap-2">
+                  <Label>Kategori</Label>
+                  <Select
+                    value={category ?? ""}
+                    onValueChange={(value) => setCategory((value || null) as ProjectCategory | null)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pilih kategori proyek" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {projectCategoryOptions.map((opt) => (
+                        <SelectItem key={opt} value={opt}>
+                          {opt}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label>Client / Akun</Label>
+                  {clientAdding ? (
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={clientNamaNew}
+                        onChange={(event) => setClientNamaNew(event.target.value)}
+                        placeholder="Nama client baru"
+                        autoFocus
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            void handleAddClient();
+                          }
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => void handleAddClient()}
+                        disabled={clientNewSaving || !clientNamaNew.trim()}
+                      >
+                        Simpan
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setClientAdding(false);
+                          setClientNamaNew("");
+                        }}
+                      >
+                        Batal
+                      </Button>
+                    </div>
+                  ) : (
+                    <Select
+                      value={clientId ?? ""}
+                      onValueChange={(value) => {
+                        if (value === "__ADD_NEW__") {
+                          setClientAdding(true);
+                          return;
+                        }
+                        setClientId(value || null);
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue
+                          placeholder={clientLoading ? "Memuat..." : "Pilih client"}
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {clientList.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.nama}
+                          </SelectItem>
+                        ))}
+                        <SelectItem value="__ADD_NEW__" className="font-semibold text-violet-700">
+                          + Tambah client baru
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+              </div>
+
+              {speakerVisible ? (
+                <div className="grid gap-2 rounded-xl border border-border/60 bg-white/70 p-3">
+                  <Label className="text-sm font-medium">Pemateri/Asesor</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Pilih satu atau lebih anggota yang berperan sebagai pemateri/asesor untuk
+                    kategori {category}.
+                  </p>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {users.length === 0 ? (
+                      <span className="text-xs text-muted-foreground">
+                        Belum ada user yang dapat dipilih.
+                      </span>
+                    ) : (
+                      [...users]
+                        .sort((a, b) => a.nama.localeCompare(b.nama))
+                        .map((candidate) => {
+                          const checked = speakerUserIds.includes(candidate.id);
+                          return (
+                            <button
+                              type="button"
+                              key={candidate.id}
+                              onClick={() => toggleSpeaker(candidate.id)}
+                              className={cn(
+                                "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                                checked
+                                  ? "border-violet-300 bg-violet-100 text-violet-800"
+                                  : "border-border/60 bg-white text-muted-foreground hover:bg-muted/50",
+                              )}
+                            >
+                              {checked ? "✓ " : "+ "}
+                              {candidate.nama}
+                            </button>
+                          );
+                        })
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </>
+          ) : null}
+
           <div className="grid gap-3">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <Label>Detail target tugas</Label>
@@ -2699,6 +2923,37 @@ function ReportView({
   tasks: Task[];
   users: User[];
 }) {
+  if (activeUser.role === "Manajemen") {
+    return (
+      <ManagementReportView
+        activeUser={activeUser}
+        projects={projects}
+        tasks={tasks}
+        users={users}
+      />
+    );
+  }
+  return (
+    <MemberReportView
+      activeUser={activeUser}
+      projects={projects}
+      tasks={tasks}
+      users={users}
+    />
+  );
+}
+
+function ManagementReportView({
+  activeUser: _activeUser,
+  projects,
+  tasks,
+  users,
+}: {
+  activeUser: User;
+  projects: ProjectWithProgress[];
+  tasks: Task[];
+  users: User[];
+}) {
   const today = getLocalDateKey();
   const defaultFrom = useMemo(() => {
     const d = new Date(`${today}T00:00:00`);
@@ -2710,17 +2965,6 @@ function ReportView({
   const [isGenerating, setIsGenerating] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [error, setError] = useState("");
-
-  if (activeUser.role !== "Manajemen") {
-    return (
-      <div className="grid gap-4">
-        <PageHeader
-          title="Akses Terbatas"
-          description="Halaman Report hanya dapat diakses oleh role Manajemen."
-        />
-      </div>
-    );
-  }
 
   const applyPreset = (preset: "month" | "quarter" | "semester" | "year") => {
     const d = new Date(`${today}T00:00:00`);
@@ -2964,6 +3208,146 @@ function ReportPreview({ report }: { report: import("@/lib/reports/analyze").Rep
         </Card>
       )}
 
+      {report.byCategory.some((c) => c.total > 0) && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm">Sebaran Kategori Proyek</CardTitle>
+            <CardDescription className="text-xs">
+              Distribusi proyek per kategori (Training, Workshop, dst) dan rata-rata durasi proyek
+              yang sudah selesai.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+              {report.byCategory.map((cat) => (
+                <div
+                  key={cat.category}
+                  className="rounded-xl border border-border/60 bg-white/80 p-3"
+                >
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                    {cat.category}
+                  </p>
+                  <p className="mt-1 text-xl font-semibold">{cat.total}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Selesai {cat.selesai}
+                    {cat.avgDurasiHari !== null
+                      ? ` · ${cat.avgDurasiHari} hari rata-rata`
+                      : ""}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {report.byClient.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm">Proyek per Client / Akun</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Client</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                  <TableHead className="text-right">Selesai</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {report.byClient.map((row) => (
+                  <TableRow key={row.client}>
+                    <TableCell className="font-medium">{row.client}</TableCell>
+                    <TableCell className="text-right text-xs">{row.total}</TableCell>
+                    <TableCell className="text-right text-xs">{row.selesai}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {report.bySpeaker.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm">Pemateri / Asesor Tersibuk</CardTitle>
+            <CardDescription className="text-xs">
+              Jumlah proyek dengan kategori Training / Workshop / Sertifikasi yang melibatkan tiap
+              pemateri/asesor.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nama</TableHead>
+                  <TableHead>Tim</TableHead>
+                  <TableHead className="text-right">Total Proyek</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {report.bySpeaker.map((row) => (
+                  <TableRow key={row.user_id}>
+                    <TableCell className="font-medium">{row.nama}</TableCell>
+                    <TableCell className="text-xs">{row.team ?? "—"}</TableCell>
+                    <TableCell className="text-right text-xs">{row.total}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {report.projectsDetail.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm">Detail Proyek Periode</CardTitle>
+            <CardDescription className="text-xs">
+              Termasuk kategori, client, pemateri/asesor, tim terlibat, dan durasi pengerjaan.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nama</TableHead>
+                  <TableHead>Kategori</TableHead>
+                  <TableHead>Client</TableHead>
+                  <TableHead>Pemateri/Asesor</TableHead>
+                  <TableHead>Tim Terlibat</TableHead>
+                  <TableHead>Selesai</TableHead>
+                  <TableHead className="text-right">Durasi</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {report.projectsDetail.map((p) => (
+                  <TableRow key={p.id}>
+                    <TableCell className="font-medium">{p.nama_proyek}</TableCell>
+                    <TableCell className="text-xs">{p.category ?? "—"}</TableCell>
+                    <TableCell className="text-xs">{p.client_nama ?? "—"}</TableCell>
+                    <TableCell className="text-xs">
+                      {p.speaker_names.length > 0 ? p.speaker_names.join(", ") : "—"}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {[p.owner_team, ...p.collaborator_teams].join(", ")}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {p.tanggal_selesai ? formatDate(p.tanggal_selesai) : "Belum"}
+                    </TableCell>
+                    <TableCell className="text-right text-xs">
+                      {p.durasi_hari !== null ? `${p.durasi_hari} hari` : "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm">Rekomendasi Kebijakan</CardTitle>
@@ -2982,6 +3366,278 @@ function ReportPreview({ report }: { report: import("@/lib/reports/analyze").Rep
           </ul>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function MemberReportView({
+  activeUser,
+  projects,
+  tasks,
+  users,
+}: {
+  activeUser: User;
+  projects: ProjectWithProgress[];
+  tasks: Task[];
+  users: User[];
+}) {
+  const today = getLocalDateKey();
+  const defaultFrom = useMemo(() => {
+    const d = new Date(`${today}T00:00:00`);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+  }, [today]);
+  const [from, setFrom] = useState(defaultFrom);
+  const [to, setTo] = useState(today);
+  const [report, setReport] = useState<
+    import("@/lib/reports/analyze").MemberReportData | null
+  >(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [error, setError] = useState("");
+
+  const applyPreset = (preset: "month" | "quarter" | "semester" | "year") => {
+    const d = new Date(`${today}T00:00:00`);
+    const year = d.getFullYear();
+    const month = d.getMonth();
+    let start: Date;
+    let end: Date;
+    if (preset === "month") {
+      start = new Date(year, month, 1);
+      end = new Date(year, month + 1, 0);
+    } else if (preset === "quarter") {
+      const qStart = Math.floor(month / 3) * 3;
+      start = new Date(year, qStart, 1);
+      end = new Date(year, qStart + 3, 0);
+    } else if (preset === "semester") {
+      const sStart = Math.floor(month / 6) * 6;
+      start = new Date(year, sStart, 1);
+      end = new Date(year, sStart + 6, 0);
+    } else {
+      start = new Date(year, 0, 1);
+      end = new Date(year, 11, 31);
+    }
+    const fmt = (date: Date) =>
+      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    setFrom(fmt(start));
+    setTo(fmt(end));
+  };
+
+  const handleGenerate = async () => {
+    setError("");
+    if (from > to) {
+      setError("Tanggal mulai harus sebelum tanggal akhir.");
+      return;
+    }
+    setIsGenerating(true);
+    try {
+      const { buildMemberReport } = await import("@/lib/reports/analyze");
+      const result = buildMemberReport({
+        userId: activeUser.id,
+        projects,
+        tasks,
+        users,
+        range: { from, to },
+      });
+      setReport(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Gagal generate laporan.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <div className="grid gap-6">
+      <PageHeader
+        title="Report Personal"
+        description={`Ringkasan keterlibatan dan KPI ${activeUser.nama} sebagai anggota/pemateri. Pilih rentang waktu lalu klik Generate.`}
+      />
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle>Konfigurasi Periode</CardTitle>
+          <CardDescription>Tentukan rentang waktu laporan personal Anda.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-1.5">
+              <Label htmlFor="member-report-from" className="text-xs">
+                Dari tanggal
+              </Label>
+              <Input
+                id="member-report-from"
+                type="date"
+                value={from}
+                onChange={(e) => setFrom(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="member-report-to" className="text-xs">
+                Sampai tanggal
+              </Label>
+              <Input
+                id="member-report-to"
+                type="date"
+                value={to}
+                onChange={(e) => setTo(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => applyPreset("month")}>
+              Bulan ini
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => applyPreset("quarter")}>
+              Kuarter ini
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => applyPreset("semester")}>
+              Semester ini
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => applyPreset("year")}>
+              Tahun ini
+            </Button>
+          </div>
+          {error && (
+            <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+              {error}
+            </div>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" onClick={handleGenerate} disabled={isGenerating} className="gap-2">
+              <BarChart3 className="h-4 w-4" aria-hidden="true" />
+              {isGenerating ? "Memproses..." : "Generate Laporan"}
+            </Button>
+            {report && (
+              <Button type="button" variant="ghost" onClick={() => setReport(null)}>
+                Bersihkan
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {report && <MemberReportPreview report={report} />}
+    </div>
+  );
+}
+
+function MemberReportPreview({
+  report,
+}: {
+  report: import("@/lib/reports/analyze").MemberReportData;
+}) {
+  return (
+    <div className="grid gap-4">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm">Summary KPI</CardTitle>
+          <CardDescription className="text-xs">
+            Periode {formatDate(report.range.from)} – {formatDate(report.range.to)}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <MetricCard
+              label="Proyek Terlibat"
+              value={report.totalProjects}
+              icon={ClipboardList}
+              tone="indigo"
+            />
+            <MetricCard
+              label="Sebagai Pemateri/Asesor"
+              value={report.asSpeaker}
+              icon={Users}
+              tone="violet"
+            />
+            <MetricCard
+              label="Target Selesai"
+              value={`${report.completed}/${report.totalTargets}`}
+              icon={CheckCircle2}
+              tone="emerald"
+            />
+            <MetricCard
+              label="Completion"
+              value={`${report.completionRate}%`}
+              icon={BarChart3}
+              tone="amber"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-2">
+            <MetricCard
+              label="Target Overdue"
+              value={report.overdue}
+              icon={AlertTriangle}
+              tone="rose"
+            />
+            <MetricCard
+              label="Masih Berjalan"
+              value={report.ongoing}
+              icon={CalendarClock}
+              tone="sky"
+            />
+          </div>
+          <div className="rounded-xl border border-border/60 bg-white/70 p-3 text-sm leading-relaxed text-foreground">
+            {report.narrative}
+          </div>
+        </CardContent>
+      </Card>
+
+      {report.byCategory.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm">Sebaran Kategori</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+              {report.byCategory.map((row) => (
+                <div
+                  key={row.category}
+                  className="rounded-xl border border-border/60 bg-white/80 p-3"
+                >
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                    {row.category}
+                  </p>
+                  <p className="mt-1 text-xl font-semibold">{row.total}</p>
+                  <p className="text-xs text-muted-foreground">proyek</p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {report.projects.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm">Proyek Terlibat</CardTitle>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nama</TableHead>
+                  <TableHead>Kategori</TableHead>
+                  <TableHead>Peran</TableHead>
+                  <TableHead className="text-right">Target Saya</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {report.projects.map((p) => (
+                  <TableRow key={p.id}>
+                    <TableCell className="font-medium">{p.nama_proyek}</TableCell>
+                    <TableCell className="text-xs">{p.category ?? "—"}</TableCell>
+                    <TableCell className="text-xs">{p.role}</TableCell>
+                    <TableCell className="text-right text-xs">
+                      {p.targetCompleted}/{p.targetTotal}
+                    </TableCell>
+                    <TableCell className="text-xs">{p.status}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
@@ -3808,23 +4464,33 @@ async function createProject(
   showToast: (message: string) => void,
 ) {
   try {
+    const body: Record<string, unknown> = {
+      nama_proyek: project.nama_proyek,
+      status: project.status,
+      target_tugas: project.target_tugas,
+      target_detail_tugas: project.target_detail_tugas.map((item) => ({
+        id: item.id,
+        deskripsi: item.deskripsi,
+        assigned_user_id: item.assigned_user_id,
+        status: item.status,
+        mulai: item.mulai,
+        deadline: item.deadline,
+      })),
+      deadline: project.deadline,
+      collaborator_teams: project.collaborator_teams,
+    };
+    if (project.category !== undefined && project.category !== null) {
+      body.category = project.category;
+    }
+    if (project.client_id !== undefined && project.client_id !== null) {
+      body.client_id = project.client_id;
+    }
+    if (project.speaker_user_ids && project.speaker_user_ids.length > 0) {
+      body.speaker_user_ids = project.speaker_user_ids;
+    }
     await fetchJson<Project>("/api/projects", {
       method: "POST",
-      body: JSON.stringify({
-        nama_proyek: project.nama_proyek,
-        status: project.status,
-        target_tugas: project.target_tugas,
-        target_detail_tugas: project.target_detail_tugas.map((item) => ({
-          id: item.id,
-          deskripsi: item.deskripsi,
-          assigned_user_id: item.assigned_user_id,
-          status: item.status,
-          mulai: item.mulai,
-          deadline: item.deadline,
-        })),
-        deadline: project.deadline,
-        collaborator_teams: project.collaborator_teams,
-      }),
+      body: JSON.stringify(body),
     });
     await refresh();
     showToast("Proyek baru berhasil dibuat.");
@@ -3839,23 +4505,29 @@ async function updateProject(
   showToast: (message: string) => void,
 ) {
   try {
+    const body: Record<string, unknown> = {
+      nama_proyek: project.nama_proyek,
+      status: project.status,
+      target_tugas: project.target_tugas,
+      target_detail_tugas: project.target_detail_tugas.map((item) => ({
+        id: item.id,
+        deskripsi: item.deskripsi,
+        assigned_user_id: item.assigned_user_id,
+        status: item.status,
+        mulai: item.mulai,
+        deadline: item.deadline,
+      })),
+      deadline: project.deadline,
+      collaborator_teams: project.collaborator_teams,
+    };
+    if (project.category !== undefined) body.category = project.category;
+    if (project.client_id !== undefined) body.client_id = project.client_id;
+    if (project.speaker_user_ids !== undefined) {
+      body.speaker_user_ids = project.speaker_user_ids;
+    }
     await fetchJson<Project>(`/api/projects/${project.id}`, {
       method: "PATCH",
-      body: JSON.stringify({
-        nama_proyek: project.nama_proyek,
-        status: project.status,
-        target_tugas: project.target_tugas,
-        target_detail_tugas: project.target_detail_tugas.map((item) => ({
-          id: item.id,
-          deskripsi: item.deskripsi,
-          assigned_user_id: item.assigned_user_id,
-          status: item.status,
-          mulai: item.mulai,
-          deadline: item.deadline,
-        })),
-        deadline: project.deadline,
-        collaborator_teams: project.collaborator_teams,
-      }),
+      body: JSON.stringify(body),
     });
     await refresh();
     showToast("Perubahan proyek tersimpan.");

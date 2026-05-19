@@ -11,6 +11,14 @@ const teamTypeSchema = z.enum([
   "Tim SDK",
 ]);
 
+const projectCategorySchema = z.enum([
+  "Training",
+  "Eksplorasi",
+  "Produksi Produk",
+  "Workshop",
+  "Sertifikasi",
+]);
+
 const targetDetailTaskSchema = z.union([
   z.string().trim().min(1),
   z.object({
@@ -42,6 +50,18 @@ export const projectCreateSchema = z.object({
     .nullable()
     .optional(),
   collaborator_teams: z.array(teamTypeSchema).optional(),
+  category: projectCategorySchema.nullable().optional(),
+  client_id: z.string().trim().min(1).nullable().optional(),
+  client_nama_new: z.string().trim().min(1).max(120).optional(),
+  speaker_user_ids: z.array(z.string().trim().min(1)).optional(),
+});
+
+export const clientCreateSchema = z.object({
+  nama: z
+    .string()
+    .trim()
+    .min(1, "Nama client wajib diisi")
+    .max(120, "Nama client maksimal 120 karakter"),
 });
 
 export const projectUpdateSchema = projectCreateSchema.partial().refine(
@@ -73,6 +93,7 @@ export const taskStatusUpdateSchema = z.object({
 
 export type ProjectCreateInput = z.infer<typeof projectCreateSchema>;
 export type ProjectUpdateInput = z.infer<typeof projectUpdateSchema>;
+export type ClientCreateInput = z.infer<typeof clientCreateSchema>;
 export type TaskCreateInput = z.infer<typeof taskCreateSchema>;
 export type TaskDeleteInput = z.infer<typeof taskDeleteSchema>;
 export type TaskStatusUpdateInput = z.infer<typeof taskStatusUpdateSchema>;

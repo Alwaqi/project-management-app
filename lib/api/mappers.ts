@@ -17,6 +17,10 @@ export function toProjectDto(
   project: ProjectRow,
   targetTasks: ProjectTargetTaskRow[] = [],
   collaboratorTeams: TeamType[] = [],
+  options: {
+    clientNama?: string | null;
+    speakerUserIds?: string[];
+  } = {},
 ) {
   return {
     id: project.id,
@@ -37,8 +41,13 @@ export function toProjectDto(
       })),
     deadline: project.deadline,
     dibuat_pada: toDateKey(project.createdAt),
+    diperbarui_pada: project.updatedAt ? toDateKey(project.updatedAt) : null,
     owner_team: project.ownerTeam,
     collaborator_teams: collaboratorTeams,
+    category: project.category ?? null,
+    client_id: project.clientId ?? null,
+    client_nama: options.clientNama ?? null,
+    speaker_user_ids: options.speakerUserIds ?? [],
   };
 }
 

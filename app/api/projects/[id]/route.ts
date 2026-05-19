@@ -1,10 +1,12 @@
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, notInArray, sql as drizzleSql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
 import {
+  client,
   project,
   projectCollaboratorTeam,
+  projectSpeaker,
   projectTargetTask,
   user,
 } from "@/lib/db/schema";
@@ -20,7 +22,11 @@ import { sendTargetAssignmentEmails } from "@/lib/api/assignment-notifications";
 import { toProjectDto } from "@/lib/api/mappers";
 import { databaseUnavailableResponse, handleRouteError } from "@/lib/api/responses";
 import { projectUpdateSchema } from "@/lib/api/validation";
-import type { TeamType } from "@/lib/domain";
+import {
+  isEducationLeader,
+  projectCategoriesRequireSpeaker,
+  type TeamType,
+} from "@/lib/domain";
 
 export const runtime = "nodejs";
 
@@ -36,6 +42,24 @@ async function getCollaboratorTeams(projectId: string): Promise<TeamType[]> {
     .from(projectCollaboratorTeam)
     .where(eq(projectCollaboratorTeam.projectId, projectId));
   return rows.map((row) => row.teamType);
+}
+
+async function getSpeakerUserIds(projectId: string): Promise<string[]> {
+  const rows = await db
+    .select({ userId: projectSpeaker.userId })
+    .from(projectSpeaker)
+    .where(eq(projectSpeaker.projectId, projectId));
+  return rows.map((row) => row.userId);
+}
+
+async function getClientNamaForProject(clientId: string | null): Promise<string | null> {
+  if (!clientId) return null;
+  const [row] = await db
+    .select({ nama: client.nama })
+    .from(client)
+    .where(eq(client.id, clientId))
+    .limit(1);
+  return row?.nama ?? null;
 }
 
 export async function GET(request: Request, context: RouteContext) {
@@ -76,8 +100,16 @@ export async function GET(request: Request, context: RouteContext) {
       return forbiddenResponse("Proyek ini tidak ditugaskan ke akun ini");
     }
 
+    const [clientNama, speakerUserIds] = await Promise.all([
+      getClientNamaForProject(accessCtx.project.clientId ?? null),
+      getSpeakerUserIds(id),
+    ]);
+
     return NextResponse.json({
-      data: toProjectDto(accessCtx.project, visibleTargetTasks, accessCtx.collaboratorTeams),
+      data: toProjectDto(accessCtx.project, visibleTargetTasks, accessCtx.collaboratorTeams, {
+        clientNama,
+        speakerUserIds,
+      }),
     });
   } catch (error) {
     return handleRouteError(error);
@@ -103,6 +135,58 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
 
     const payload = projectUpdateSchema.parse(await request.json());
+
+    const usesEducationFields =
+      payload.category !== undefined ||
+      payload.client_id !== undefined ||
+      payload.client_nama_new !== undefined ||
+      payload.speaker_user_ids !== undefined;
+    if (usesEducationFields && !isEducationLeader(currentUser)) {
+      return forbiddenResponse(
+        "Field kategori, client, dan pemateri/asesor hanya untuk Leader Tim Edukasi",
+      );
+    }
+
+    let resolvedClientId: string | null | undefined;
+    if (payload.client_nama_new) {
+      const newClientId = crypto.randomUUID();
+      const [upserted] = await db
+        .insert(client)
+        .values({ id: newClientId, nama: payload.client_nama_new })
+        .onConflictDoUpdate({
+          target: client.nama,
+          set: { nama: drizzleSql`excluded.nama` },
+        })
+        .returning({ id: client.id });
+      resolvedClientId = upserted?.id ?? null;
+    } else if (payload.client_id !== undefined) {
+      resolvedClientId = payload.client_id;
+    }
+
+    // Speaker hanya tersimpan jika kategori finalnya membutuhkan
+    const effectiveCategory =
+      payload.category !== undefined ? payload.category : accessCtx.project.category ?? null;
+    const speakerIdsRequested = payload.speaker_user_ids;
+    const speakerIdsClean =
+      speakerIdsRequested !== undefined
+        ? effectiveCategory && projectCategoriesRequireSpeaker.includes(effectiveCategory)
+          ? Array.from(new Set(speakerIdsRequested))
+          : []
+        : undefined;
+
+    if (speakerIdsClean && speakerIdsClean.length > 0) {
+      const validSpeakers = await db
+        .select({ id: user.id })
+        .from(user)
+        .where(inArray(user.id, speakerIdsClean));
+      if (validSpeakers.length !== speakerIdsClean.length) {
+        return NextResponse.json(
+          { error: "Ada user pemateri/asesor yang tidak ditemukan." },
+          { status: 400 },
+        );
+      }
+    }
+
     const targetItems =
       "target_detail_tugas" in payload
         ? normalizeTargetDetails(payload.target_detail_tugas)
@@ -152,9 +236,32 @@ export async function PATCH(request: Request, context: RouteContext) {
             ? { targetTugas: targetItems?.length || payload.target_tugas || 1 }
             : {}),
           ...(projectDeadline !== undefined ? { deadline: projectDeadline } : {}),
+          ...(payload.category !== undefined ? { category: payload.category ?? null } : {}),
+          ...(resolvedClientId !== undefined ? { clientId: resolvedClientId } : {}),
           updatedAt: new Date(),
         })
         .where(eq(project.id, id));
+
+      if (speakerIdsClean !== undefined) {
+        // Replace strategy: delete rows that aren't in the new list, then upsert new ones.
+        if (speakerIdsClean.length > 0) {
+          await tx
+            .delete(projectSpeaker)
+            .where(
+              and(
+                eq(projectSpeaker.projectId, id),
+                notInArray(projectSpeaker.userId, speakerIdsClean),
+              ),
+            );
+          // Use onConflictDoNothing on PK so re-inserts are idempotent
+          await tx
+            .insert(projectSpeaker)
+            .values(speakerIdsClean.map((userId) => ({ projectId: id, userId })))
+            .onConflictDoNothing();
+        } else {
+          await tx.delete(projectSpeaker).where(eq(projectSpeaker.projectId, id));
+        }
+      }
 
       const [projectRow] = await tx
         .select()
@@ -274,10 +381,17 @@ export async function PATCH(request: Request, context: RouteContext) {
       .from(projectTargetTask)
       .where(eq(projectTargetTask.projectId, id))
       .orderBy(asc(projectTargetTask.urutan));
-    const collaboratorTeams = await getCollaboratorTeams(id);
+    const [collaboratorTeams, speakerUserIds, clientNama] = await Promise.all([
+      getCollaboratorTeams(id),
+      getSpeakerUserIds(id),
+      getClientNamaForProject(updatedProject.project.clientId ?? null),
+    ]);
 
     return NextResponse.json({
-      data: toProjectDto(updatedProject.project, targetTasksForResponse, collaboratorTeams),
+      data: toProjectDto(updatedProject.project, targetTasksForResponse, collaboratorTeams, {
+        clientNama,
+        speakerUserIds,
+      }),
     });
   } catch (error) {
     return handleRouteError(error);

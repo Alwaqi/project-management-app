@@ -29,11 +29,19 @@ const targetTaskStatusValues = [
   "Koreksi",
   "Selesai",
 ] as const;
+const projectCategoryValues = [
+  "Training",
+  "Eksplorasi",
+  "Produksi Produk",
+  "Workshop",
+  "Sertifikasi",
+] as const;
 
 export const roleEnum = pgEnum("role", roleValues);
 export const teamTypeEnum = pgEnum("team_type", teamTypeValues);
 export const projectStatusEnum = pgEnum("project_status", projectStatusValues);
 export const targetTaskStatusEnum = pgEnum("target_task_status", targetTaskStatusValues);
+export const projectCategoryEnum = pgEnum("project_category", projectCategoryValues);
 
 export const user = pgTable(
   "user",
@@ -99,6 +107,18 @@ export const verification = pgTable("verification", {
   updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
 });
 
+export const client = pgTable(
+  "client",
+  {
+    id: varchar("id", { length: 255 }).primaryKey(),
+    nama: varchar("nama", { length: 255 }).notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    namaIdx: uniqueIndex("client_nama_idx").on(table.nama),
+  }),
+);
+
 export const project = pgTable("project", {
   id: varchar("id", { length: 255 }).primaryKey(),
   namaProyek: varchar("nama_proyek", { length: 255 }).notNull(),
@@ -106,9 +126,29 @@ export const project = pgTable("project", {
   targetTugas: integer("target_tugas").notNull().default(8),
   deadline: date("deadline", { mode: "string" }),
   ownerTeam: teamTypeEnum("owner_team").notNull().default("Tim Admin"),
+  category: projectCategoryEnum("category"),
+  clientId: varchar("client_id", { length: 255 }).references(() => client.id, {
+    onDelete: "set null",
+  }),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
 });
+
+export const projectSpeaker = pgTable(
+  "project_speaker",
+  {
+    projectId: varchar("project_id", { length: 255 })
+      .notNull()
+      .references(() => project.id, { onDelete: "cascade" }),
+    userId: varchar("user_id", { length: 255 })
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.projectId, table.userId] }),
+    userIdx: index("project_speaker_user_idx").on(table.userId),
+  }),
+);
 
 export const projectCollaboratorTeam = pgTable(
   "project_collaborator_team",
@@ -179,10 +219,30 @@ export const accountRelations = relations(account, ({ one }) => ({
   }),
 }));
 
-export const projectRelations = relations(project, ({ many }) => ({
+export const projectRelations = relations(project, ({ one, many }) => ({
   tasks: many(task),
   targetTasks: many(projectTargetTask),
   collaboratorTeams: many(projectCollaboratorTeam),
+  speakers: many(projectSpeaker),
+  client: one(client, {
+    fields: [project.clientId],
+    references: [client.id],
+  }),
+}));
+
+export const projectSpeakerRelations = relations(projectSpeaker, ({ one }) => ({
+  project: one(project, {
+    fields: [projectSpeaker.projectId],
+    references: [project.id],
+  }),
+  user: one(user, {
+    fields: [projectSpeaker.userId],
+    references: [user.id],
+  }),
+}));
+
+export const clientRelations = relations(client, ({ many }) => ({
+  projects: many(project),
 }));
 
 export const projectCollaboratorTeamRelations = relations(

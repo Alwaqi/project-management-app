@@ -1,10 +1,12 @@
-import { asc, desc, eq, inArray } from "drizzle-orm";
+import { asc, desc, eq, inArray, sql as drizzleSql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
 import {
+  client,
   project,
   projectCollaboratorTeam,
+  projectSpeaker,
   projectTargetTask,
   task,
   user,
@@ -24,7 +26,11 @@ import {
 import { databaseUnavailableResponse, handleRouteError } from "@/lib/api/responses";
 import { sendTargetAssignmentEmails } from "@/lib/api/assignment-notifications";
 import { projectCreateSchema } from "@/lib/api/validation";
-import type { TeamType } from "@/lib/domain";
+import {
+  isEducationLeader,
+  projectCategoriesRequireSpeaker,
+  type TeamType,
+} from "@/lib/domain";
 
 export const runtime = "nodejs";
 
@@ -36,15 +42,31 @@ export async function GET(request: Request) {
     const currentUser = await getRequestUser(request);
     if (!currentUser) return unauthorizedResponse();
 
-    const [projectRows, targetTaskRows, taskRows, collaboratorRows] = await Promise.all([
+    const [
+      projectRows,
+      targetTaskRows,
+      taskRows,
+      collaboratorRows,
+      clientRows,
+      speakerRows,
+    ] = await Promise.all([
       db.select().from(project).orderBy(desc(project.createdAt)),
       db.select().from(projectTargetTask).orderBy(asc(projectTargetTask.urutan)),
       db.select().from(task),
       db.select().from(projectCollaboratorTeam),
+      db.select({ id: client.id, nama: client.nama }).from(client),
+      db.select().from(projectSpeaker),
     ]);
     const tasks = taskRows.map(toTaskDto);
     const targetTasksByProject = groupTargetTasksByProject(targetTaskRows);
     const collaboratorTeamsByProject = groupCollaboratorTeamsByProject(collaboratorRows);
+    const clientById = new Map(clientRows.map((row) => [row.id, row.nama] as const));
+    const speakersByProject = speakerRows.reduce<Map<string, string[]>>((groups, row) => {
+      const existing = groups.get(row.projectId) ?? [];
+      existing.push(row.userId);
+      groups.set(row.projectId, existing);
+      return groups;
+    }, new Map());
 
     let visibleProjectRows = projectRows;
     if (currentUser.role === "Manajemen") {
@@ -74,6 +96,10 @@ export async function GET(request: Request) {
         row,
         targetsForUser,
         collaboratorTeamsByProject.get(row.id) ?? [],
+        {
+          clientNama: row.clientId ? clientById.get(row.clientId) ?? null : null,
+          speakerUserIds: speakersByProject.get(row.id) ?? [],
+        },
       );
     });
 
@@ -101,6 +127,51 @@ export async function POST(request: Request) {
     const collaboratorTeams = Array.from(
       new Set((payload.collaborator_teams ?? []).filter((team) => team !== ownerTeam)),
     );
+
+    // Gate field tambahan untuk Leader Tim Edukasi saja
+    const usesEducationFields =
+      payload.category !== undefined ||
+      payload.client_id !== undefined ||
+      payload.client_nama_new !== undefined ||
+      (payload.speaker_user_ids && payload.speaker_user_ids.length > 0);
+    if (usesEducationFields && !isEducationLeader(currentUser)) {
+      return forbiddenResponse(
+        "Field kategori, client, dan pemateri/asesor hanya untuk Leader Tim Edukasi",
+      );
+    }
+
+    let resolvedClientId: string | null = payload.client_id ?? null;
+    if (payload.client_nama_new) {
+      const newClientId = crypto.randomUUID();
+      const [upserted] = await db
+        .insert(client)
+        .values({ id: newClientId, nama: payload.client_nama_new })
+        .onConflictDoUpdate({
+          target: client.nama,
+          set: { nama: drizzleSql`excluded.nama` },
+        })
+        .returning({ id: client.id });
+      resolvedClientId = upserted?.id ?? null;
+    }
+
+    // Speaker hanya untuk kategori yang membutuhkan
+    const speakerIds =
+      payload.category && projectCategoriesRequireSpeaker.includes(payload.category)
+        ? Array.from(new Set(payload.speaker_user_ids ?? []))
+        : [];
+
+    if (speakerIds.length > 0) {
+      const validSpeakers = await db
+        .select({ id: user.id })
+        .from(user)
+        .where(inArray(user.id, speakerIds));
+      if (validSpeakers.length !== speakerIds.length) {
+        return NextResponse.json(
+          { error: "Ada user pemateri/asesor yang tidak ditemukan." },
+          { status: 400 },
+        );
+      }
+    }
 
     const assignedUserIds = targetItems
       .map((item) => item.assignedUserId)
@@ -132,6 +203,8 @@ export async function POST(request: Request) {
         targetTugas: targetItems.length || payload.target_tugas,
         deadline: projectDeadline,
         ownerTeam,
+        category: payload.category ?? null,
+        clientId: resolvedClientId,
       });
 
       if (collaboratorTeams.length > 0) {
@@ -140,6 +213,12 @@ export async function POST(request: Request) {
             projectId,
             teamType,
           })),
+        );
+      }
+
+      if (speakerIds.length > 0) {
+        await tx.insert(projectSpeaker).values(
+          speakerIds.map((userId) => ({ projectId, userId })),
         );
       }
 
@@ -173,6 +252,7 @@ export async function POST(request: Request) {
         project: newProject,
         targetTasks: newTargetTasks,
         collaboratorTeams,
+        speakerIds,
       };
     });
 
@@ -187,12 +267,26 @@ export async function POST(request: Request) {
       assignedBy: currentUser.nama,
     });
 
+    let clientNama: string | null = null;
+    if (createdProject.project.clientId) {
+      const [row] = await db
+        .select({ nama: client.nama })
+        .from(client)
+        .where(eq(client.id, createdProject.project.clientId))
+        .limit(1);
+      clientNama = row?.nama ?? null;
+    }
+
     return NextResponse.json(
       {
         data: toProjectDto(
           createdProject.project,
           createdProject.targetTasks,
           createdProject.collaboratorTeams as TeamType[],
+          {
+            clientNama,
+            speakerUserIds: createdProject.speakerIds,
+          },
         ),
       },
       { status: 201 },

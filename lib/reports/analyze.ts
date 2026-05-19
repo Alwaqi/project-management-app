@@ -2,6 +2,8 @@ import {
   formatDate,
   getLocalDateKey,
   Project,
+  ProjectCategory,
+  projectCategoryOptions,
   Role,
   Task,
   TargetDetailTask,
@@ -41,6 +43,40 @@ export type ReportTeam = {
   narrative: string;
 };
 
+export type ReportCategoryRow = {
+  category: ProjectCategory;
+  total: number;
+  selesai: number;
+  avgDurasiHari: number | null;
+};
+
+export type ReportClientRow = {
+  client: string;
+  total: number;
+  selesai: number;
+};
+
+export type ReportSpeakerRow = {
+  user_id: string;
+  nama: string;
+  team: TeamType | null;
+  total: number;
+};
+
+export type ReportProjectDetail = {
+  id: string;
+  nama_proyek: string;
+  category: ProjectCategory | null;
+  client_nama: string | null;
+  owner_team: TeamType;
+  collaborator_teams: TeamType[];
+  speaker_names: string[];
+  status: Project["status"];
+  dibuat_pada: string;
+  tanggal_selesai: string | null;
+  durasi_hari: number | null;
+};
+
 export type ReportData = {
   range: DateRange;
   generatedAt: string;
@@ -60,6 +96,10 @@ export type ReportData = {
     overdueRisks: ReportMember[];
     overloadedMembers: ReportMember[];
   };
+  byCategory: ReportCategoryRow[];
+  byClient: ReportClientRow[];
+  bySpeaker: ReportSpeakerRow[];
+  projectsDetail: ReportProjectDetail[];
   orgNarrative: string;
   recommendations: string[];
 };
@@ -357,6 +397,103 @@ export function buildReport({
     );
   }
 
+  // === Dimensi baru: kategori / client / pemateri / projects detail ===
+  const userById = new Map(users.map((u) => [u.id, u] as const));
+
+  const projectsInPeriod = projects.filter((p) => {
+    // Project relevan kalau dibuat dalam range, atau diselesaikan dalam range,
+    // atau ada target dalam range (sudah ditangani via targetsInPeriod).
+    if (p.dibuat_pada && isWithinRange(p.dibuat_pada, range)) return true;
+    if (
+      p.status === "Selesai" &&
+      p.diperbarui_pada &&
+      isWithinRange(p.diperbarui_pada, range)
+    ) {
+      return true;
+    }
+    return p.target_detail_tugas.some((t) => isTargetInPeriod(t, range));
+  });
+
+  const projectsDetail: ReportProjectDetail[] = projectsInPeriod.map((p) => {
+    const tanggalSelesai =
+      p.status === "Selesai" ? p.diperbarui_pada ?? null : null;
+    const endRef = tanggalSelesai ?? today;
+    let durasiHari: number | null = null;
+    if (p.dibuat_pada) {
+      const start = new Date(`${p.dibuat_pada}T00:00:00`).getTime();
+      const end = new Date(`${endRef}T00:00:00`).getTime();
+      durasiHari = Math.max(1, Math.ceil((end - start) / 86_400_000) + 1);
+    }
+    const speakerNames = (p.speaker_user_ids ?? [])
+      .map((id) => userById.get(id)?.nama)
+      .filter((n): n is string => Boolean(n));
+    return {
+      id: p.id,
+      nama_proyek: p.nama_proyek,
+      category: p.category,
+      client_nama: p.client_nama,
+      owner_team: p.owner_team,
+      collaborator_teams: p.collaborator_teams,
+      speaker_names: speakerNames,
+      status: p.status,
+      dibuat_pada: p.dibuat_pada,
+      tanggal_selesai: tanggalSelesai,
+      durasi_hari: durasiHari,
+    };
+  });
+
+  const byCategory: ReportCategoryRow[] = projectCategoryOptions.map((cat) => {
+    const rows = projectsDetail.filter((p) => p.category === cat);
+    const selesai = rows.filter((p) => p.status === "Selesai");
+    const durations = selesai
+      .map((p) => p.durasi_hari)
+      .filter((d): d is number => typeof d === "number");
+    const avg =
+      durations.length > 0
+        ? Math.round(durations.reduce((sum, d) => sum + d, 0) / durations.length)
+        : null;
+    return {
+      category: cat,
+      total: rows.length,
+      selesai: selesai.length,
+      avgDurasiHari: avg,
+    };
+  });
+
+  const clientAgg = new Map<string, { total: number; selesai: number }>();
+  for (const p of projectsDetail) {
+    if (!p.client_nama) continue;
+    const acc = clientAgg.get(p.client_nama) ?? { total: 0, selesai: 0 };
+    acc.total += 1;
+    if (p.status === "Selesai") acc.selesai += 1;
+    clientAgg.set(p.client_nama, acc);
+  }
+  const byClient: ReportClientRow[] = Array.from(clientAgg.entries())
+    .map(([clientName, agg]) => ({
+      client: clientName,
+      total: agg.total,
+      selesai: agg.selesai,
+    }))
+    .sort((a, b) => b.total - a.total || a.client.localeCompare(b.client));
+
+  const speakerAgg = new Map<string, number>();
+  for (const p of projectsInPeriod) {
+    for (const speakerId of p.speaker_user_ids ?? []) {
+      speakerAgg.set(speakerId, (speakerAgg.get(speakerId) ?? 0) + 1);
+    }
+  }
+  const bySpeaker: ReportSpeakerRow[] = Array.from(speakerAgg.entries())
+    .map(([userId, total]) => {
+      const u = userById.get(userId);
+      return {
+        user_id: userId,
+        nama: u?.nama ?? "—",
+        team: u?.team_type ?? null,
+        total,
+      };
+    })
+    .sort((a, b) => b.total - a.total || a.nama.localeCompare(b.nama));
+
   return {
     range,
     generatedAt: new Date().toISOString(),
@@ -376,6 +513,10 @@ export function buildReport({
       overdueRisks,
       overloadedMembers,
     },
+    byCategory,
+    byClient,
+    bySpeaker,
+    projectsDetail,
     orgNarrative,
     recommendations,
   };
@@ -383,5 +524,207 @@ export function buildReport({
 
 export function workloadLabel(status: WorkloadStatus): string {
   return WORKLOAD_LABELS[status];
+}
+
+// ============================================================
+// Member (personal) report
+// ============================================================
+
+export type MemberRole = "Anggota" | "Pemateri/Asesor" | "Keduanya";
+
+export type MemberReportProject = {
+  id: string;
+  nama_proyek: string;
+  category: ProjectCategory | null;
+  role: MemberRole;
+  targetTotal: number;
+  targetCompleted: number;
+  status: Project["status"];
+};
+
+export type MemberReportData = {
+  range: DateRange;
+  generatedAt: string;
+  user: { id: string; nama: string; team: TeamType; role: Role };
+  totalProjects: number;
+  asSpeaker: number;
+  asMember: number;
+  byCategory: { category: ProjectCategory; total: number }[];
+  totalTargets: number;
+  completed: number;
+  overdue: number;
+  ongoing: number;
+  completionRate: number;
+  projects: MemberReportProject[];
+  narrative: string;
+};
+
+export function buildMemberReport({
+  userId,
+  projects,
+  tasks,
+  users,
+  range,
+}: {
+  userId: string;
+  projects: Project[];
+  tasks: Task[];
+  users: User[];
+  range: DateRange;
+}): MemberReportData {
+  const today = getLocalDateKey();
+  const user = users.find((u) => u.id === userId);
+
+  const completedByTargetId = new Set(
+    tasks
+      .filter((t) => t.target_task_id && isWithinRange(t.tanggal, range))
+      .map((t) => t.target_task_id as string),
+  );
+
+  const memberProjects: MemberReportProject[] = [];
+  let totalTargets = 0;
+  let completed = 0;
+  let overdue = 0;
+  let ongoing = 0;
+  let asSpeaker = 0;
+  let asMember = 0;
+  const categoryAgg = new Map<ProjectCategory, number>();
+
+  for (const project of projects) {
+    const isSpeaker = (project.speaker_user_ids ?? []).includes(userId);
+    const userTargets = project.target_detail_tugas.filter(
+      (t) => t.assigned_user_id === userId && isTargetInPeriod(t, range),
+    );
+
+    if (!isSpeaker && userTargets.length === 0) continue;
+
+    if (isSpeaker) asSpeaker += 1;
+    if (userTargets.length > 0) asMember += 1;
+
+    if (project.category) {
+      categoryAgg.set(
+        project.category,
+        (categoryAgg.get(project.category) ?? 0) + 1,
+      );
+    }
+
+    let targetCompleted = 0;
+    for (const t of userTargets) {
+      totalTargets += 1;
+      const done = isCompleted(t, completedByTargetId);
+      if (done) {
+        targetCompleted += 1;
+        completed += 1;
+      } else if (t.deadline && t.deadline < today) {
+        overdue += 1;
+      } else {
+        ongoing += 1;
+      }
+    }
+
+    const role: MemberRole =
+      isSpeaker && userTargets.length > 0
+        ? "Keduanya"
+        : isSpeaker
+          ? "Pemateri/Asesor"
+          : "Anggota";
+
+    memberProjects.push({
+      id: project.id,
+      nama_proyek: project.nama_proyek,
+      category: project.category,
+      role,
+      targetTotal: userTargets.length,
+      targetCompleted,
+      status: project.status,
+    });
+  }
+
+  const completionRate = totalTargets > 0
+    ? Math.round((completed / totalTargets) * 100)
+    : 0;
+
+  const byCategory = Array.from(categoryAgg.entries())
+    .map(([category, total]) => ({ category, total }))
+    .sort((a, b) => b.total - a.total);
+
+  const namaUser = user?.nama ?? "Anggota";
+  const narrative = composeMemberNarrative({
+    nama: namaUser,
+    totalProjects: memberProjects.length,
+    asSpeaker,
+    byCategory,
+    totalTargets,
+    completed,
+    overdue,
+    ongoing,
+    completionRate,
+  });
+
+  return {
+    range,
+    generatedAt: new Date().toISOString(),
+    user: {
+      id: userId,
+      nama: namaUser,
+      team: user?.team_type ?? "Tim Admin",
+      role: user?.role ?? "Tim",
+    },
+    totalProjects: memberProjects.length,
+    asSpeaker,
+    asMember,
+    byCategory,
+    totalTargets,
+    completed,
+    overdue,
+    ongoing,
+    completionRate,
+    projects: memberProjects.sort((a, b) => a.nama_proyek.localeCompare(b.nama_proyek)),
+    narrative,
+  };
+}
+
+export function composeMemberNarrative(data: {
+  nama: string;
+  totalProjects: number;
+  asSpeaker: number;
+  byCategory: { category: ProjectCategory; total: number }[];
+  totalTargets: number;
+  completed: number;
+  overdue: number;
+  ongoing: number;
+  completionRate: number;
+}): string {
+  if (data.totalProjects === 0) {
+    return `Selama periode ini, ${data.nama} belum terlibat di proyek aktif. Pantau penugasan baru dari Leader tim.`;
+  }
+
+  const speakerLine =
+    data.asSpeaker > 0
+      ? ` (${data.asSpeaker} di antaranya sebagai Pemateri/Asesor)`
+      : "";
+
+  const topCat = data.byCategory[0];
+  const catLine = topCat
+    ? ` Sebaran terbanyak di kategori ${topCat.category} (${topCat.total} proyek).`
+    : "";
+
+  const targetLine =
+    data.totalTargets > 0
+      ? ` Dari ${data.totalTargets} target yang ditugaskan, sudah selesai ${data.completed} (${data.completionRate}%), dengan ${data.overdue} terlambat dan ${data.ongoing} masih berjalan.`
+      : ` Belum ada target spesifik yang ditugaskan ke ${data.nama} di periode ini.`;
+
+  let closer: string;
+  if (data.completionRate >= 80) {
+    closer = " Pertahankan ritme, performa konsisten di atas standar.";
+  } else if (data.completionRate >= 50) {
+    closer = " Konsisten, dorong sisanya tepat waktu agar target periode tercapai.";
+  } else if (data.totalTargets > 0) {
+    closer = " Fokuskan beberapa target paling dekat deadline lebih dulu untuk menaikkan completion rate.";
+  } else {
+    closer = " Koordinasikan ulang dengan Leader untuk mendapatkan target periode berikutnya.";
+  }
+
+  return `Selama periode ini, ${data.nama} terlibat di ${data.totalProjects} proyek${speakerLine}.${catLine}${targetLine}${closer}`;
 }
 

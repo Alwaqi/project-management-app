@@ -8,6 +8,12 @@ export type TeamType =
   | "Tim SDK";
 export type ProjectStatus = "Menunggu" | "Berjalan" | "Selesai";
 export type TargetTaskStatus = "Belum Mulai" | "Dikerjakan" | "Koreksi" | "Selesai";
+export type ProjectCategory =
+  | "Training"
+  | "Eksplorasi"
+  | "Produksi Produk"
+  | "Workshop"
+  | "Sertifikasi";
 
 export const teamTypeOptions: TeamType[] = [
   "Tim Sales",
@@ -17,6 +23,24 @@ export const teamTypeOptions: TeamType[] = [
   "Tim Edukasi",
   "Tim SDK",
 ];
+
+export const projectCategoryOptions: ProjectCategory[] = [
+  "Training",
+  "Eksplorasi",
+  "Produksi Produk",
+  "Workshop",
+  "Sertifikasi",
+];
+
+export const projectCategoriesRequireSpeaker: ProjectCategory[] = [
+  "Training",
+  "Workshop",
+  "Sertifikasi",
+];
+
+export function isEducationLeader(u: { role: Role; team_type: TeamType }) {
+  return u.role === "Leader" && u.team_type === "Tim Edukasi";
+}
 
 export type TargetDetailTask = {
   id: string;
@@ -44,8 +68,13 @@ export type Project = {
   target_detail_tugas: TargetDetailTask[];
   deadline: string | null;
   dibuat_pada: string;
+  diperbarui_pada?: string | null;
   owner_team: TeamType;
   collaborator_teams: TeamType[];
+  category: ProjectCategory | null;
+  client_id: string | null;
+  client_nama: string | null;
+  speaker_user_ids: string[];
 };
 
 export type Task = {
