@@ -195,9 +195,6 @@ export default function Home() {
     if (activeUser.role === "Manajemen" && activeView === "journal") {
       setActiveView("dashboard");
     }
-    if (activeUser.role !== "Manajemen" && activeView === "report") {
-      setActiveView("dashboard");
-    }
   }, [activeUser, activeView]);
 
   const showToast = (message: string) => {
@@ -469,7 +466,6 @@ export default function Home() {
               {navItems
                 .filter((item) => {
                   if (activeUser.role === "Manajemen" && item.id === "journal") return false;
-                  if (activeUser.role !== "Manajemen" && item.id === "report") return false;
                   return true;
                 })
                 .map((item) => {
