@@ -24,6 +24,7 @@ import { databaseUnavailableResponse, handleRouteError } from "@/lib/api/respons
 import { projectUpdateSchema } from "@/lib/api/validation";
 import {
   isEducationLeader,
+  isMarketingContentLeader,
   projectCategoriesRequireSpeaker,
   type TeamType,
 } from "@/lib/domain";
@@ -136,15 +137,20 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     const payload = projectUpdateSchema.parse(await request.json());
 
-    const usesEducationFields =
+    const canUseStructuredProjectFields =
+      isEducationLeader(currentUser) || isMarketingContentLeader(currentUser);
+    const usesStructuredProjectFields =
       payload.category !== undefined ||
       payload.client_id !== undefined ||
       payload.client_nama_new !== undefined ||
       payload.speaker_user_ids !== undefined;
-    if (usesEducationFields && !isEducationLeader(currentUser)) {
+    if (usesStructuredProjectFields && !canUseStructuredProjectFields) {
       return forbiddenResponse(
-        "Field kategori, client, dan pemateri/asesor hanya untuk Leader Tim Edukasi",
+        "Field kategori dan client hanya untuk Leader Tim Edukasi atau Leader Tim Marketing dan Konten",
       );
+    }
+    if (payload.speaker_user_ids !== undefined && !isEducationLeader(currentUser)) {
+      return forbiddenResponse("Pemateri/asesor hanya untuk Leader Tim Edukasi");
     }
 
     let resolvedClientId: string | null | undefined;

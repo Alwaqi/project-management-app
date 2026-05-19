@@ -28,6 +28,7 @@ import { sendTargetAssignmentEmails } from "@/lib/api/assignment-notifications";
 import { projectCreateSchema } from "@/lib/api/validation";
 import {
   isEducationLeader,
+  isMarketingContentLeader,
   projectCategoriesRequireSpeaker,
   type TeamType,
 } from "@/lib/domain";
@@ -135,16 +136,20 @@ export async function POST(request: Request) {
       new Set((payload.collaborator_teams ?? []).filter((team) => team !== ownerTeam)),
     );
 
-    // Gate field tambahan untuk Leader Tim Edukasi saja
-    const usesEducationFields =
+    const canUseStructuredProjectFields =
+      isEducationLeader(currentUser) || isMarketingContentLeader(currentUser);
+    const usesStructuredProjectFields =
       payload.category !== undefined ||
       payload.client_id !== undefined ||
       payload.client_nama_new !== undefined ||
       (payload.speaker_user_ids && payload.speaker_user_ids.length > 0);
-    if (usesEducationFields && !isEducationLeader(currentUser)) {
+    if (usesStructuredProjectFields && !canUseStructuredProjectFields) {
       return forbiddenResponse(
-        "Field kategori, client, dan pemateri/asesor hanya untuk Leader Tim Edukasi",
+        "Field kategori dan client hanya untuk Leader Tim Edukasi atau Leader Tim Marketing dan Konten",
       );
+    }
+    if ((payload.speaker_user_ids?.length ?? 0) > 0 && !isEducationLeader(currentUser)) {
+      return forbiddenResponse("Pemateri/asesor hanya untuk Leader Tim Edukasi");
     }
 
     let resolvedClientId: string | null = payload.client_id ?? null;

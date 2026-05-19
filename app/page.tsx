@@ -74,15 +74,18 @@ import { authClient } from "@/lib/auth-client";
 import {
   formatDate,
   getDaysUntilDeadline,
+  getProjectCompletedTaskCount,
   getProjectProgress,
   getProjectTargetCount,
   getTaskPlannedDuration,
+  educationProjectCategoryOptions,
   isEducationLeader,
+  isMarketingContentLeader,
   isProjectOverdue,
+  marketingProjectCategoryOptions,
   Project,
   ProjectCategory,
   projectCategoriesRequireSpeaker,
-  projectCategoryOptions,
   ProjectStatus,
   Role,
   TeamType,
@@ -108,6 +111,18 @@ type TargetDraft = {
   status: TargetTaskStatus;
   mulai: string;
   deadline: string;
+};
+
+type ContentAsset = {
+  id: string;
+  name: string;
+  type: string;
+  dataUrl: string;
+};
+
+type ContentNote = {
+  text: string;
+  assets: ContentAsset[];
 };
 
 type DashboardSummary = {
@@ -551,7 +566,17 @@ export default function Home() {
               tasks={tasks}
               users={users}
               onCreateProject={(project) => {
-                void createProject(project, loadWorkspace, showToast);
+                void createProject(project, loadWorkspace, showToast, (createdProject) => {
+                  const createdProjectWithProgress: ProjectWithProgress = {
+                    ...createdProject,
+                    progress: getProjectProgress(createdProject, tasks),
+                    total_tugas: getProjectCompletedTaskCount(createdProject, tasks),
+                  };
+                  setProjects((currentProjects) => [
+                    createdProjectWithProgress,
+                    ...currentProjects.filter((item) => item.id !== createdProject.id),
+                  ]);
+                });
               }}
               onUpdateProject={(updatedProject) => {
                 void updateProject(updatedProject, loadWorkspace, showToast);
@@ -1921,6 +1946,11 @@ function ProjectDialog({
   const ownerTeam: TeamType = project?.owner_team ?? activeUser.team_type;
   const otherTeams = teamTypeOptions.filter((team) => team !== ownerTeam);
   const isEduLeader = isEducationLeader(activeUser);
+  const isMarketingLeader = isMarketingContentLeader(activeUser);
+  const hasStructuredProjectFields = isEduLeader || isMarketingLeader;
+  const categoryOptions = isMarketingLeader
+    ? marketingProjectCategoryOptions
+    : educationProjectCategoryOptions;
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(project?.nama_proyek ?? "");
   const [status, setStatus] = useState<ProjectStatus>(project?.status ?? "Berjalan");
@@ -1944,7 +1974,7 @@ function ProjectDialog({
   const [speakerSearch, setSpeakerSearch] = useState("");
 
   useEffect(() => {
-    if (!open || !isEduLeader) return;
+    if (!open || !hasStructuredProjectFields) return;
     let cancelled = false;
     setClientLoading(true);
     fetch("/api/clients", { credentials: "include" })
@@ -1964,7 +1994,7 @@ function ProjectDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, isEduLeader]);
+  }, [open, hasStructuredProjectFields]);
 
   const speakerVisible =
     isEduLeader && category !== null && projectCategoriesRequireSpeaker.includes(category);
@@ -2055,8 +2085,8 @@ function ProjectDialog({
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const finalCategory = isEduLeader ? category : null;
-    const finalClientId = isEduLeader ? clientId : null;
+    const finalCategory = hasStructuredProjectFields ? category : null;
+    const finalClientId = hasStructuredProjectFields ? clientId : null;
     const finalSpeakers =
       isEduLeader && finalCategory && projectCategoriesRequireSpeaker.includes(finalCategory)
         ? speakerUserIds
@@ -2185,7 +2215,7 @@ function ProjectDialog({
             </div>
           </div>
 
-          {isEduLeader ? (
+          {hasStructuredProjectFields ? (
             <>
               <div className="grid gap-2 sm:grid-cols-2">
                 <div className="grid gap-2">
@@ -2198,7 +2228,7 @@ function ProjectDialog({
                       <SelectValue placeholder="Pilih kategori proyek" />
                     </SelectTrigger>
                     <SelectContent>
-                      {projectCategoryOptions.map((opt) => (
+                      {categoryOptions.map((opt) => (
                         <SelectItem key={opt} value={opt}>
                           {opt}
                         </SelectItem>
@@ -2533,13 +2563,14 @@ function JournalView({
     note?: string,
   ) => void;
 }) {
+  const isMarketingContentUser = activeUser.team_type === "Tim Marketing dan Konten";
   const selectableProjects = projects.filter(
     (project) =>
-      project.status !== "Selesai" &&
       (activeUser.role === "Leader" || getVisibleTargetDetails(project, activeUser).length > 0),
   );
   const [selectedProject, setSelectedProject] = useState(selectableProjects[0]?.id ?? "");
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
+  const [assetDrafts, setAssetDrafts] = useState<Record<string, ContentAsset[]>>({});
   const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null);
   useEffect(() => {
     if (!selectableProjects.some((project) => project.id === selectedProject)) {
@@ -2579,9 +2610,49 @@ function JournalView({
   };
 
   const handleSubmitCompletion = (target: Project["target_detail_tugas"][number]) => {
-    const note = noteDrafts[target.id]?.trim();
+    const text = noteDrafts[target.id]?.trim() ?? "";
+    const assets = assetDrafts[target.id] ?? [];
+    const note = isMarketingContentUser
+      ? serializeContentNote({ text, assets })
+      : text;
     handleTargetStatusChange(target, "Selesai", note || undefined);
     setExpandedNoteId(null);
+  };
+
+  const openTargetNote = (target: Project["target_detail_tugas"][number]) => {
+    const completionTask = completedTaskByTargetId.get(target.id);
+    const parsed = parseContentNote(completionTask?.deskripsi);
+    setNoteDrafts((prev) => ({
+      ...prev,
+      [target.id]: prev[target.id] ?? parsed.text,
+    }));
+    setAssetDrafts((prev) => ({
+      ...prev,
+      [target.id]: prev[target.id] ?? parsed.assets,
+    }));
+    setExpandedNoteId((current) => (current === target.id ? null : target.id));
+  };
+
+  const handleContentAssetFiles = async (
+    targetId: string,
+    files: FileList | null,
+  ) => {
+    if (!files?.length) return;
+    const imageFiles = Array.from(files).filter((file) =>
+      ["image/jpeg", "image/png"].includes(file.type),
+    );
+    const assets = await Promise.all(imageFiles.map(readContentAssetFile));
+    setAssetDrafts((prev) => ({
+      ...prev,
+      [targetId]: [...(prev[targetId] ?? []), ...assets],
+    }));
+  };
+
+  const removeContentAsset = (targetId: string, assetId: string) => {
+    setAssetDrafts((prev) => ({
+      ...prev,
+      [targetId]: (prev[targetId] ?? []).filter((asset) => asset.id !== assetId),
+    }));
   };
 
   return (
@@ -2640,7 +2711,9 @@ function JournalView({
                         const isCompleted = completedTargetIds.has(target.id) || target.status === "Selesai";
                         const currentStatus = getEffectiveTargetStatus(target, completedTargetIds);
                         const completionTask = completedTaskByTargetId.get(target.id);
-                        const draftNote = noteDrafts[target.id] ?? "";
+                        const savedContent = parseContentNote(completionTask?.deskripsi);
+                        const draftNote = noteDrafts[target.id] ?? savedContent.text;
+                        const draftAssets = assetDrafts[target.id] ?? savedContent.assets;
                         const isExpanded = expandedNoteId === target.id;
 
                         return (
@@ -2674,7 +2747,7 @@ function JournalView({
                                 onValueChange={(value) => {
                                   const next = value as TargetTaskStatus;
                                   if (next === "Selesai") {
-                                    setExpandedNoteId(target.id);
+                                    openTargetNote(target);
                                   } else {
                                     setExpandedNoteId(null);
                                     handleTargetStatusChange(target, next);
@@ -2693,28 +2766,82 @@ function JournalView({
                               </Select>
                             </div>
 
-                            {isCompleted && completionTask?.deskripsi && completionTask.deskripsi !== target.deskripsi && (
-                              <div className="rounded-lg border border-emerald-200 bg-white/80 p-2 text-xs text-emerald-900">
-                                <span className="font-medium">Catatan: </span>
-                                {completionTask.deskripsi}
-                              </div>
-                            )}
+                            {isCompleted && completionTask?.deskripsi && !isExpanded ? (
+                              <ContentNotePreview
+                                note={savedContent}
+                                compact={!isMarketingContentUser}
+                                label={isMarketingContentUser ? "Deskripsi/Isi Konten" : "Catatan"}
+                              />
+                            ) : null}
 
-                            {!isCompleted && isExpanded && (
+                            {isExpanded && (
                               <div className="grid gap-2 rounded-lg border border-dashed border-emerald-300 bg-emerald-50/60 p-3">
                                 <Label htmlFor={`note-${target.id}`} className="text-xs font-medium text-emerald-900">
-                                  Jelaskan apa yang Anda lakukan pada tugas ini
+                                  {isMarketingContentUser
+                                    ? "Deskripsi/Isi Konten"
+                                    : "Jelaskan apa yang Anda lakukan pada tugas ini"}
                                 </Label>
                                 <Textarea
                                   id={`note-${target.id}`}
-                                  rows={3}
+                                  rows={isMarketingContentUser ? 6 : 3}
                                   value={draftNote}
                                   onChange={(event) =>
                                     setNoteDrafts((prev) => ({ ...prev, [target.id]: event.target.value }))
                                   }
-                                  placeholder="Contoh: Sudah menyusun draft proposal v1 dan mengirim ke reviewer."
+                                  placeholder={
+                                    isMarketingContentUser
+                                      ? "Tulis script konten, caption, hook, CTA, brief visual, atau catatan revisi..."
+                                      : "Contoh: Sudah menyusun draft proposal v1 dan mengirim ke reviewer."
+                                  }
                                   className="bg-white"
                                 />
+                                {isMarketingContentUser ? (
+                                  <div className="grid gap-2">
+                                    <Label htmlFor={`asset-${target.id}`} className="text-xs font-medium text-emerald-900">
+                                      Referensi gambar (.jpeg/.png)
+                                    </Label>
+                                    <Input
+                                      id={`asset-${target.id}`}
+                                      type="file"
+                                      accept="image/jpeg,image/png"
+                                      multiple
+                                      className="bg-white"
+                                      onChange={(event) => {
+                                        void handleContentAssetFiles(target.id, event.target.files);
+                                        event.currentTarget.value = "";
+                                      }}
+                                    />
+                                    {draftAssets.length > 0 ? (
+                                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                                        {draftAssets.map((asset) => (
+                                          <div key={asset.id} className="overflow-hidden rounded-lg border bg-white">
+                                            <Image
+                                              src={asset.dataUrl}
+                                              alt={asset.name}
+                                              width={240}
+                                              height={112}
+                                              unoptimized
+                                              className="h-28 w-full object-cover"
+                                            />
+                                            <div className="flex items-center justify-between gap-2 p-2">
+                                              <span className="truncate text-[11px] text-muted-foreground">
+                                                {asset.name}
+                                              </span>
+                                              <button
+                                                type="button"
+                                                className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                                                onClick={() => removeContentAsset(target.id, asset.id)}
+                                                aria-label={`Hapus ${asset.name}`}
+                                              >
+                                                <X className="h-3.5 w-3.5" aria-hidden="true" />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                ) : null}
                                 <div className="flex justify-end gap-2">
                                   <Button
                                     type="button"
@@ -2729,23 +2856,29 @@ function JournalView({
                                     size="sm"
                                     onClick={() => handleSubmitCompletion(target)}
                                   >
-                                    Tandai selesai
+                                    {isCompleted ? "Simpan isi" : "Tandai selesai"}
                                   </Button>
                                 </div>
                               </div>
                             )}
 
-                            {!isCompleted && !isExpanded && (
+                            {!isExpanded && (
                               <div className="flex flex-wrap items-center gap-2">
                                 <Button
                                   type="button"
                                   variant="outline"
                                   size="sm"
                                   className="gap-2"
-                                  onClick={() => setExpandedNoteId(target.id)}
+                                  onClick={() => openTargetNote(target)}
                                 >
                                   <PenLine className="h-3.5 w-3.5" aria-hidden="true" />
-                                  Tambah catatan & selesaikan
+                                  {isCompleted
+                                    ? isMarketingContentUser
+                                      ? "Buka / edit isi konten"
+                                      : "Buka / edit catatan"
+                                    : isMarketingContentUser
+                                      ? "Isi konten & selesaikan"
+                                      : "Tambah catatan & selesaikan"}
                                 </Button>
                               </div>
                             )}
@@ -4516,6 +4649,7 @@ function ActivityItem({
 }) {
   const project = projects.find((item) => item.id === task.project_id);
   const user = users.find((item) => item.id === task.user_id);
+  const note = parseContentNote(task.deskripsi);
 
   return (
     <div className="rounded-lg border p-3">
@@ -4528,13 +4662,83 @@ function ActivityItem({
         </div>
         <span className="text-xs text-muted-foreground">{formatDate(task.tanggal)}</span>
       </div>
-      <p className="mt-2 text-sm text-foreground">{task.deskripsi}</p>
+      <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">
+        {note.text || task.deskripsi}
+      </p>
+      {note.assets.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {note.assets.slice(0, 3).map((asset) => (
+            <a
+              key={asset.id}
+              href={asset.dataUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-md border bg-muted/40 px-2 py-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+            >
+              {asset.name}
+            </a>
+          ))}
+          {note.assets.length > 3 ? (
+            <span className="rounded-md border bg-muted/40 px-2 py-1 text-xs text-muted-foreground">
+              +{note.assets.length - 3} aset
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
         <span
           className={cn("h-2 w-2 rounded-full", project?.status === "Selesai" ? "bg-emerald-500" : "bg-primary")}
         />
         {project?.nama_proyek ?? "Proyek tidak ditemukan"}
       </div>
+    </div>
+  );
+}
+
+function ContentNotePreview({
+  note,
+  label,
+  compact,
+}: {
+  note: ContentNote;
+  label: string;
+  compact?: boolean;
+}) {
+  if (!note.text && note.assets.length === 0) return null;
+
+  return (
+    <div className="grid gap-3 rounded-lg border border-emerald-200 bg-white/80 p-3 text-xs text-emerald-900">
+      {note.text ? (
+        <div>
+          <span className="font-medium">{label}: </span>
+          <p className="mt-1 whitespace-pre-wrap leading-relaxed">{note.text}</p>
+        </div>
+      ) : null}
+      {!compact && note.assets.length > 0 ? (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {note.assets.map((asset) => (
+            <a
+              key={asset.id}
+              href={asset.dataUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="overflow-hidden rounded-lg border bg-white transition-opacity hover:opacity-90"
+            >
+              <Image
+                src={asset.dataUrl}
+                alt={asset.name}
+                width={240}
+                height={96}
+                unoptimized
+                className="h-24 w-full object-cover"
+              />
+              <span className="block truncate px-2 py-1.5 text-[11px] text-muted-foreground">
+                {asset.name}
+              </span>
+            </a>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -4664,6 +4868,66 @@ function formatTargetSchedule(target: Project["target_detail_tugas"][number]) {
   return "Jadwal belum diatur";
 }
 
+const CONTENT_NOTE_PREFIX = "__PROTRACK_CONTENT_NOTE_V1__";
+
+function serializeContentNote(note: ContentNote) {
+  const payload: ContentNote = {
+    text: note.text.trim(),
+    assets: note.assets,
+  };
+
+  if (!payload.text && payload.assets.length === 0) return "";
+  return `${CONTENT_NOTE_PREFIX}${JSON.stringify(payload)}`;
+}
+
+function parseContentNote(value?: string | null): ContentNote {
+  if (!value) return { text: "", assets: [] };
+
+  if (!value.startsWith(CONTENT_NOTE_PREFIX)) {
+    return { text: value, assets: [] };
+  }
+
+  try {
+    const parsed = JSON.parse(value.slice(CONTENT_NOTE_PREFIX.length)) as Partial<ContentNote>;
+    return {
+      text: typeof parsed.text === "string" ? parsed.text : "",
+      assets: Array.isArray(parsed.assets)
+        ? parsed.assets.filter(isContentAsset)
+        : [],
+    };
+  } catch {
+    return { text: value, assets: [] };
+  }
+}
+
+function isContentAsset(value: unknown): value is ContentAsset {
+  if (!value || typeof value !== "object") return false;
+  const asset = value as Partial<ContentAsset>;
+  return (
+    typeof asset.id === "string" &&
+    typeof asset.name === "string" &&
+    typeof asset.type === "string" &&
+    typeof asset.dataUrl === "string" &&
+    asset.dataUrl.startsWith("data:image/")
+  );
+}
+
+function readContentAssetFile(file: File): Promise<ContentAsset> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      resolve({
+        id: `asset-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        name: file.name,
+        type: file.type,
+        dataUrl: String(reader.result ?? ""),
+      });
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
 async function fetchJson<T>(url: string, init?: RequestInit) {
   const response = await fetch(url, {
     ...init,
@@ -4685,6 +4949,7 @@ async function createProject(
   project: Project,
   refresh: () => Promise<unknown>,
   showToast: (message: string) => void,
+  onCreated?: (project: Project) => void,
 ) {
   try {
     const body: Record<string, unknown> = {
@@ -4711,12 +4976,13 @@ async function createProject(
     if (project.speaker_user_ids && project.speaker_user_ids.length > 0) {
       body.speaker_user_ids = project.speaker_user_ids;
     }
-    await fetchJson<Project>("/api/projects", {
+    const createdProject = await fetchJson<Project>("/api/projects", {
       method: "POST",
       body: JSON.stringify(body),
     });
-    await refresh();
+    onCreated?.(createdProject);
     showToast("Proyek baru berhasil dibuat.");
+    void refresh();
   } catch (error) {
     showToast(getErrorMessage(error));
   }

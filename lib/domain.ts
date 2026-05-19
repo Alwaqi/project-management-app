@@ -13,7 +13,10 @@ export type ProjectCategory =
   | "Eksplorasi"
   | "Produksi Produk"
   | "Workshop"
-  | "Sertifikasi";
+  | "Sertifikasi"
+  | "Produksi Konten"
+  | "Publish Konten"
+  | "Evaluasi Konten";
 
 export const teamTypeOptions: TeamType[] = [
   "Tim Sales",
@@ -30,6 +33,9 @@ export const projectCategoryOptions: ProjectCategory[] = [
   "Produksi Produk",
   "Workshop",
   "Sertifikasi",
+  "Produksi Konten",
+  "Publish Konten",
+  "Evaluasi Konten",
 ];
 
 export const projectCategoriesRequireSpeaker: ProjectCategory[] = [
@@ -38,8 +44,26 @@ export const projectCategoriesRequireSpeaker: ProjectCategory[] = [
   "Sertifikasi",
 ];
 
+export const educationProjectCategoryOptions: ProjectCategory[] = [
+  "Training",
+  "Eksplorasi",
+  "Produksi Produk",
+  "Workshop",
+  "Sertifikasi",
+];
+
+export const marketingProjectCategoryOptions: ProjectCategory[] = [
+  "Produksi Konten",
+  "Publish Konten",
+  "Evaluasi Konten",
+];
+
 export function isEducationLeader(u: { role: Role; team_type: TeamType }) {
   return u.role === "Leader" && u.team_type === "Tim Edukasi";
+}
+
+export function isMarketingContentLeader(u: { role: Role; team_type: TeamType }) {
+  return u.role === "Leader" && u.team_type === "Tim Marketing dan Konten";
 }
 
 export type TargetDetailTask = {

@@ -35,6 +35,9 @@ const projectCategoryValues = [
   "Produksi Produk",
   "Workshop",
   "Sertifikasi",
+  "Produksi Konten",
+  "Publish Konten",
+  "Evaluasi Konten",
 ] as const;
 
 export const roleEnum = pgEnum("role", roleValues);

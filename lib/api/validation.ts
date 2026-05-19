@@ -17,6 +17,9 @@ const projectCategorySchema = z.enum([
   "Produksi Produk",
   "Workshop",
   "Sertifikasi",
+  "Produksi Konten",
+  "Publish Konten",
+  "Evaluasi Konten",
 ]);
 
 const targetDetailTaskSchema = z.union([

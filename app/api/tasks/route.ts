@@ -175,6 +175,22 @@ export async function PATCH(request: Request) {
         .limit(1);
 
       if (existingTask) {
+        if (payload.deskripsi) {
+          await tx
+            .update(task)
+            .set({
+              deskripsi: payload.deskripsi,
+              tanggal: payload.tanggal ?? getLocalDateKey(),
+              updatedAt: new Date(),
+            })
+            .where(eq(task.id, existingTask.id));
+          const [updatedExistingTask] = await tx
+            .select()
+            .from(task)
+            .where(eq(task.id, existingTask.id))
+            .limit(1);
+          return updatedExistingTask;
+        }
         return existingTask;
       }
 
