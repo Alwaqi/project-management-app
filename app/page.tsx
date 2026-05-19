@@ -2923,7 +2923,12 @@ function ReportView({
   tasks: Task[];
   users: User[];
 }) {
-  if (activeUser.role === "Manajemen") {
+  // Manajemen and Leader Tim Edukasi get the aggregate report
+  // (kategori / durasi / tim / pemateri / client). Other roles see
+  // personal KPI report.
+  const isAggregateRole =
+    activeUser.role === "Manajemen" || isEducationLeader(activeUser);
+  if (isAggregateRole) {
     return (
       <ManagementReportView
         activeUser={activeUser}
@@ -2944,7 +2949,7 @@ function ReportView({
 }
 
 function ManagementReportView({
-  activeUser: _activeUser,
+  activeUser,
   projects,
   tasks,
   users,
@@ -2954,6 +2959,7 @@ function ManagementReportView({
   tasks: Task[];
   users: User[];
 }) {
+  const isEduLeaderView = isEducationLeader(activeUser);
   const today = getLocalDateKey();
   const defaultFrom = useMemo(() => {
     const d = new Date(`${today}T00:00:00`);
@@ -3027,8 +3033,12 @@ function ManagementReportView({
   return (
     <div className="grid gap-6">
       <PageHeader
-        title="Laporan Kinerja Tim SDK"
-        description="Generate narasi analitis KPI organisasi, beban kerja per tim/anggota, dan rekomendasi kebijakan. Unduh sebagai PDF untuk distribusi internal."
+        title={isEduLeaderView ? "Laporan Proyek Tim Edukasi" : "Laporan Kinerja Tim SDK"}
+        description={
+          isEduLeaderView
+            ? "Insight kategori proyek, sebaran client, pemateri/asesor terlibat, dan durasi pengerjaan untuk proyek yang Anda kelola. Generate PDF untuk distribusi internal."
+            : "Generate narasi analitis KPI organisasi, beban kerja per tim/anggota, dan rekomendasi kebijakan. Unduh sebagai PDF untuk distribusi internal."
+        }
       />
 
       <Card>
